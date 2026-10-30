@@ -172,7 +172,9 @@ button. A Bluetooth or USB keyboard operates as on Linux.
 The touchscreen operates the menus: tap an item to select it (on a
 setting with values, tap its left or right half), tap a button of the key
 at the bottom of a screen (for example "B = Back") to push it, and drag to
-scroll a list (down or right steps back, up or left steps forward). A drag
+scroll a list: the chosen item moves the way your finger goes (down or right
+steps forward, up or left steps back), or with `input.touch_scroll` set to
+`"natural"`, the list moves with your finger as on a phone. A drag
 stops at the first and the last item, and it does not change a setting's
 value. Touches that start in the edge-gesture zones of Android do not tap
 or scroll at the sides, and do not scroll at the top and bottom, because the
