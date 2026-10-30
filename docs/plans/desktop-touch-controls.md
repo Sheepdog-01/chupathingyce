@@ -1,6 +1,12 @@
 # Touch controls on the desktop builds (Windows first)
 
-Status: plan, not started. Target device: a Surface Pro 9 as a bare tablet
+Status (2026-10-30): all of it written, on stacked fork branches
+(`touch-menus-desktop`, `touch-scroll-direction`, `touch-overlay`,
+`touch-settings`); PR 1 tested on the Surface (menus by touch work); the
+rest waiting on its Surface test. Walk-throughs: `pr1-walkthrough.md`,
+`pr2-3-walkthrough.md`. Decided along the way: menu drags "follow" the
+finger by default (Sam: we own the touch feel); button themes "xbox" (the
+project's prompt icons) and "simple". Target device: a Surface Pro 9 as a bare tablet
 (no Type Cover, mouse or controller). Milenko's go-ahead: 2026-10-29.
 
 ## What's already there
