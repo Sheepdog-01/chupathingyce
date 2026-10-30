@@ -67,6 +67,23 @@ static float pixels_per_dp(void)
 	return height > 0 ? (float)height / 360.0f : 0.0f;
 }
 
+/* input.touch_scroll: a drag moves the menus' focus the way the finger
+goes ("follow", and anything else) or moves the list with it ("natural") */
+static int scroll_follows_finger(void)
+{
+	static int follows = 1;
+	static unsigned long read_at = (unsigned long)-1;
+
+	if (read_at != config_changes())
+	{
+		const char *value = config_string("input.touch_scroll");
+
+		read_at = config_changes();
+		follows = !(value && !strcmp(value, "natural"));
+	}
+	return follows;
+}
+
 /* sets up gesture sizes once they can be known; tries again until they are */
 static void menu_setup(void)
 {
@@ -173,7 +190,9 @@ void touch_input_menu_read(struct platform_ui_pointer *pointer)
 	pointer->moved = output.moved ? TRUE : FALSE;
 	pointer->left_clicks = output.clicks;
 	pointer->right_clicks = 0;
-	pointer->wheel_steps = output.wheel_steps;
+	/* touch_menu's steps go back as the finger goes down, as a phone's list
+	follows it; the focus following the finger is the other way round */
+	pointer->wheel_steps = scroll_follows_finger() ? -output.wheel_steps : output.wheel_steps;
 	pointer->downs = output.downs;
 	pointer->down_x = output.down_x * scale_x;
 	pointer->down_y = output.down_y * scale_y;

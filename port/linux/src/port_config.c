@@ -506,6 +506,10 @@ static const struct config_setting config_settings[] =
 	{ "input.touch_controls", _config_string, "\"on\"", "HALO_TOUCH_CONTROLS", _environment_value, _platform_android,
 		"On-screen touch controls: \"on\" or \"off\". \"auto\" shows them only\n"
 		"when no controller is connected." },
+	{ "input.touch_scroll", _config_string, "\"follow\"", "HALO_TOUCH_SCROLL", _environment_value, _platform_all,
+		"Dragging a menu's list on a touchscreen: \"follow\" moves the chosen\n"
+		"row the way your finger goes; \"natural\" moves the list with your\n"
+		"finger, as on a phone (a drag up chooses rows further down)." },
 #ifdef HALO_SWITCH_CONSOLE
 	/* gyro aiming (port/linux/src/xinput_sdl.c): the controller's gyroscope,
 	each local player from their own */
@@ -3112,6 +3116,7 @@ static const struct
 	{ "display.texture_decode", { "auto", "gpu", "cpu", NULL }, "\"auto\"" },
 	{ "audio.resampling", { "sinc", "linear", NULL }, "\"sinc\"" },
 	{ "input.touch_controls", { "on", "auto", "off", NULL }, "\"on\"" },
+	{ "input.touch_scroll", { "follow", "natural", NULL }, "\"follow\"" },
 	{ "game.console_log", { "important", "all", "none", NULL }, "\"important\"" },
 	{ "game.move_old_map_folders", { "ask", "yes", "no", NULL }, "\"ask\"" },
 	{ "network.protocol", { "auto", "opence", "delta", NULL }, NULL },
