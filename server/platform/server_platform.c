@@ -279,6 +279,12 @@ float platform_video_display_scale(void)
 	return 0.0f;
 }
 
+/* (no touchscreen: port/linux/src/touch_overlay.c's controls never show) */
+BOOL platform_input_touch_last(void)
+{
+	return FALSE;
+}
+
 void platform_video_swap(void)
 {
 }

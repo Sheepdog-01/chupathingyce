@@ -152,7 +152,6 @@ int halo_linux_mouse_look(short gamepad_index, float *yaw, float *pitch)
 	mouse_pending_y = 0.0f;
 	mouse_polls_unconsumed = 0;
 	pthread_mutex_unlock(&mouse_lock);
-#ifdef HALO_ANDROID
 	/* the touch controls' swipe; it is not the mouse's aiming
 	(halo_linux_mouse_aiming), so a thumb keeps the stick's magnetism */
 	touch_input_look(scale, yaw, pitch);
@@ -162,7 +161,6 @@ int halo_linux_mouse_look(short gamepad_index, float *yaw, float *pitch)
 		touch_aimed_ms = SDL_GetTicks();
 		pthread_mutex_unlock(&mouse_lock);
 	}
-#endif
 	if (x == 0.0f && y == 0.0f)
 		return *yaw != 0.0f || *pitch != 0.0f;
 	*yaw += -x * scale * mouse_sensitivity();
@@ -210,6 +208,9 @@ prompts: platform_prompt_scheme): 0 the keyboard (or mouse), 1 an Xbox-like
 pad, 2 a PlayStation pad, 3 a Nintendo pad */
 static int last_input_scheme = 1;
 static BOOL last_input_seen = FALSE;
+/* the touchscreen was used last (desktop builds: the on-screen controls
+show while it was, with input.touch_controls "auto": touch_overlay.c) */
+static BOOL last_input_touch = FALSE;
 /* (the kind of pad used last, for prompts that never show keys) */
 static int last_pad_scheme = 1;
 
@@ -274,12 +275,19 @@ void platform_input_scheme_used(void *gamepad)
 		last_input_scheme = 0;
 	}
 	last_input_seen = TRUE;
+	last_input_touch = FALSE;
 }
 
 void platform_input_touch_used(void)
 {
 	last_input_scheme = last_pad_scheme;
 	last_input_seen = TRUE;
+	last_input_touch = TRUE;
+}
+
+BOOL platform_input_touch_last(void)
+{
+	return last_input_touch;
 }
 
 /* collects the motion the game has not asked for yet; motion that nobody
@@ -309,6 +317,7 @@ static void mouse_poll(const struct platform_input_state *input)
 		{
 			last_input_scheme = 0;
 			last_input_seen = TRUE;
+			last_input_touch = FALSE;
 		}
 		mouse_wheel_accumulated += input->mouse_wheel;
 		if (input->mouse_wheel != 0.0f)
@@ -398,6 +407,7 @@ static void keyboard_gamepad(const struct platform_input_state *input, XINPUT_GA
 			{
 				last_input_scheme = 0;
 				last_input_seen = TRUE;
+				last_input_touch = FALSE;
 				break;
 			}
 		}
@@ -1625,6 +1635,7 @@ static void sdl_gamepad_state(SDL_Gamepad *gamepad, XINPUT_GAMEPAD *pad)
 			last_input_scheme = scheme_of(gamepad);
 			last_pad_scheme = last_input_scheme;
 			last_input_seen = TRUE;
+			last_input_touch = FALSE;
 #ifndef HALO_ANDROID
 			last_used_gamepad = SDL_GetGamepadID(gamepad);
 #endif
@@ -1769,9 +1780,7 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 			sdl_gamepad_state(gamepads[0], &state->Gamepad);
 		test_input_gamepad(&state->Gamepad);
 		touch_input_gamepad(&state->Gamepad);
-#ifdef HALO_ANDROID
 		touch_input_controls(&state->Gamepad, input.menus);
-#endif
 		if (abs(state->Gamepad.sThumbRX) > STICK_AIMING_DEFLECTION ||
 			abs(state->Gamepad.sThumbRY) > STICK_AIMING_DEFLECTION)
 		{

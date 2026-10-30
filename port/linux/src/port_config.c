@@ -106,6 +106,14 @@ struct config_setting
 	const char *comment;
 };
 
+/* the touch controls: always on a phone; on a computer, only once its
+touchscreen is used (touch_overlay.c), as most have a mouse and keyboard */
+#ifdef HALO_ANDROID
+#define DEFAULT_TOUCH_CONTROLS "\"on\""
+#else
+#define DEFAULT_TOUCH_CONTROLS "\"auto\""
+#endif
+
 /* macOS starts in a window, as its games do */
 #ifdef __APPLE__
 #define DEFAULT_FULLSCREEN "false"
@@ -503,13 +511,28 @@ static const struct config_setting config_settings[] =
 		"Give the mouse aim assist, as a controller has." },
 	{ "input.keyboard_prompts", _config_boolean, "true", "HALO_KEYBOARD_PROMPTS", _environment_value, _platform_desktop,
 		"Show keys in button prompts while you use the keyboard and mouse." },
-	{ "input.touch_controls", _config_string, "\"on\"", "HALO_TOUCH_CONTROLS", _environment_value, _platform_android,
+	{ "input.touch_controls", _config_string, DEFAULT_TOUCH_CONTROLS, "HALO_TOUCH_CONTROLS", _environment_value,
+		_platform_all,
 		"On-screen touch controls: \"on\" or \"off\". \"auto\" shows them only\n"
-		"when no controller is connected." },
+		"when no controller is connected (on a computer: once the touchscreen\n"
+		"is used, until a key, the mouse or a controller is)." },
 	{ "input.touch_scroll", _config_string, "\"follow\"", "HALO_TOUCH_SCROLL", _environment_value, _platform_all,
 		"Dragging a menu's list on a touchscreen: \"follow\" moves the chosen\n"
 		"row the way your finger goes; \"natural\" moves the list with your\n"
 		"finger, as on a phone (a drag up chooses rows further down)." },
+	{ "input.touch_theme", _config_string, "\"xbox\"", "HALO_TOUCH_THEME", _environment_value, _platform_desktop,
+		"How the touch controls look: \"xbox\" (the controller's buttons) or\n"
+		"\"simple\" (labelled circles)." },
+	{ "input.touch_size", _config_real, "1.0", "HALO_TOUCH_SIZE", _environment_value, _platform_desktop,
+		"The touch controls' size, from 0.5 to 2." },
+	{ "input.touch_opacity", _config_real, "0.6", "HALO_TOUCH_OPACITY", _environment_value, _platform_desktop,
+		"How solid the touch controls are, from 0.1 to 1." },
+	{ "input.touch_sensitivity", _config_real, "1.0", "HALO_TOUCH_SENSITIVITY", _environment_value,
+		_platform_desktop,
+		"How far a swipe turns the view, from 0.25 to 4." },
+	{ "input.touch_layout", _config_string, "\"\"", "HALO_TOUCH_LAYOUT", _environment_value, _platform_desktop,
+		"Where each touch control is, its size and whether it shows (Controls\n"
+		"Setup's EDIT LAYOUT writes it). Empty: the usual layout." },
 #ifdef HALO_SWITCH_CONSOLE
 	/* gyro aiming (port/linux/src/xinput_sdl.c): the controller's gyroscope,
 	each local player from their own */
@@ -3115,8 +3138,9 @@ static const struct
 	{ "display.follow_camera", { "long_waits", "always", "off", NULL }, "\"long_waits\"" },
 	{ "display.texture_decode", { "auto", "gpu", "cpu", NULL }, "\"auto\"" },
 	{ "audio.resampling", { "sinc", "linear", NULL }, "\"sinc\"" },
-	{ "input.touch_controls", { "on", "auto", "off", NULL }, "\"on\"" },
+	{ "input.touch_controls", { "on", "auto", "off", NULL }, DEFAULT_TOUCH_CONTROLS },
 	{ "input.touch_scroll", { "follow", "natural", NULL }, "\"follow\"" },
+	{ "input.touch_theme", { "xbox", "simple", NULL }, "\"xbox\"" },
 	{ "game.console_log", { "important", "all", "none", NULL }, "\"important\"" },
 	{ "game.move_old_map_folders", { "ask", "yes", "no", NULL }, "\"ask\"" },
 	{ "network.protocol", { "auto", "opence", "delta", NULL }, NULL },

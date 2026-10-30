@@ -14,6 +14,7 @@ asked of the host at every finger down (host_gesture_insets).
 
 #include "touch_input.h"
 #include "touch_menu.h"
+#include "touch_overlay.h"
 #include "port_config.h"
 
 #include <stdlib.h>
@@ -148,6 +149,10 @@ void touch_input_event(unsigned int type, const SDL_TouchFingerEvent *finger)
 	int width = 0, height = 0;
 	float x, y;
 
+	/* in a game, the on-screen controls' fingers (the desktop's: Android's
+	never come here) */
+	if (!menu_active && touch_overlay_event(type, finger))
+		return;
 	menu_setup();
 	/* SDL gives 0..1 of the window; the window is its pixels on Android */
 	platform_video_drawable_size(&width, &height);
@@ -176,6 +181,7 @@ void touch_input_cancel(void)
 {
 	menu_setup();
 	touch_menu_cancel(&menu);
+	touch_overlay_cancel();
 }
 
 void touch_input_menu_set_active(int active)
@@ -242,12 +248,12 @@ void touch_input_gamepad(XINPUT_GAMEPAD *pad)
 	}
 }
 
-#ifdef HALO_ANDROID
 /* ---------- the on-screen touch controls
 
-The overlay (port/android/app/.../TouchControls.java) draws and reads its
-own fingers on Android's UI thread; port/android/host/host_touch.c hands
-its state over. These bits tell it when to show: */
+On Android the overlay (port/android/app/.../TouchControls.java) draws and
+reads its own fingers on Android's UI thread, and
+port/android/host/host_touch.c hands its state over; on a computer they are
+touch_overlay.c's. These bits tell them when to show: */
 enum
 {
 	/* the game has read its controller: the other bits are known */
@@ -256,10 +262,39 @@ enum
 	overlay hides and lets the fingers through to the menus' pointer above */
 	_touch_scene_menus = 1 << 1,
 	/* input.touch_controls: "on" and "off" (neither: "auto", shown when
-	the device has a touchscreen and no controller) */
+	the device has a touchscreen and no controller on Android, and while
+	the touchscreen was used last on a computer) */
 	_touch_scene_on = 1 << 2,
 	_touch_scene_off = 1 << 3,
 };
+
+/* the controls' side, Android's app or touch_overlay.c */
+static void controls_scene(int scene)
+{
+#ifdef HALO_ANDROID
+	host_touch_scene(scene);
+#else
+	touch_overlay_scene(scene);
+#endif
+}
+
+static void controls_read(int *state)
+{
+#ifdef HALO_ANDROID
+	host_touch_read(state);
+#else
+	touch_overlay_read(state);
+#endif
+}
+
+static void controls_look_read(float *delta)
+{
+#ifdef HALO_ANDROID
+	host_touch_look_read(delta);
+#else
+	touch_overlay_look_read(delta);
+#endif
+}
 
 /* input.touch_controls as _touch_scene_on, _touch_scene_off or 0 ("auto");
 none, or a value it does not know, is "on": a controller seen where there is
@@ -314,12 +349,12 @@ void touch_input_controls(XINPUT_GAMEPAD *pad, int menus)
 			scene & _touch_scene_on ? "on" : scene & _touch_scene_off ? "off" : "auto");
 		last_scene = scene;
 	}
-	host_touch_scene(scene);
+	controls_scene(scene);
 	sticks[0] = &pad->sThumbLX;
 	sticks[1] = &pad->sThumbLY;
 	sticks[2] = &pad->sThumbRX;
 	sticks[3] = &pad->sThumbRY;
-	host_touch_read(state);
+	controls_read(state);
 	for (index = 0; index < 4; index++)
 	{
 		/* SDL's y runs down, the Xbox's up */
@@ -352,13 +387,18 @@ void touch_input_look(float scale, float *yaw, float *pitch)
 {
 	float delta[2];
 
-	host_touch_look_read(delta);
+	controls_look_read(delta);
 	*yaw -= delta[0] * scale;
 	*pitch -= delta[1] * scale;
 }
 
+/* (a computer's touchscreen has no motor) */
 void touch_input_rumble(unsigned int left, unsigned int right)
 {
+#ifdef HALO_ANDROID
 	host_touch_rumble(left, right);
-}
+#else
+	(void)left;
+	(void)right;
 #endif
+}

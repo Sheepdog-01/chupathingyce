@@ -727,6 +727,11 @@ void invite_prompt_pointer(struct halo_ui_pointer const *pointer);
 /* moderation's screen: the same */
 void moderation_screen_pointer(struct halo_ui_pointer const *pointer);
 void invite_prompt_render(void);
+#ifdef HALO_GAME_BROWSER
+/* the desktop's on-screen touch controls, over a game
+(port/linux/src/touch_overlay.c) */
+void touch_overlay_render(void);
+#endif
 /* (ONLINE GAMES, below: its list moves focus item by item) */
 boolean ui_widget_online_games_list(struct widget_instance *widget);
 #endif
@@ -8205,6 +8210,9 @@ void render_ui_widgets(
 #endif
 		moderation_screen_render();
 		invite_prompt_render();
+#ifdef HALO_GAME_BROWSER
+		touch_overlay_render();
+#endif
 	}
 #endif
 #ifndef HALO_XBOX_CONSOLE
