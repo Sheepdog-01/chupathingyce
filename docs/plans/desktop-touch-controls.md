@@ -74,7 +74,26 @@ a nuisance, not a blocker), the pen (it stays a mouse).
 | --- | --- | --- |
 | 1 | Steps 1–3, 5: finger routing, hint, touch as last device, menus by touch | The Surface walks the menus and starts a level by touch alone |
 | 2 | Step 4, 6: the C overlay with the default layout | The Pillar of Autumn (a10) is playable by touch alone |
-| 3 | Hide button, look sensitivity, layout saved to a file beside `config.toml` | Layout survives a restart |
+| 3 | In-game customization (below) | Layout changed from the pause menu, kept across a restart |
+
+### PR 3: customizing in game (Sam, 2026-10-29)
+
+Wanted: change the touch controls while in a game, under the settings.
+
+- **Home:** Settings > Controls Setup already has DEVICE pages
+  (controller, keyboard), drawn for all three menu styles and reachable
+  from the pause menu (`game/controls_screen.c` for the Xbox menus,
+  `tools/port_settings.py` and `game/menu_functions.c` for the Gearbox
+  and Chupathingy menus). Add a **TOUCH** page there.
+- **Rows:** SHOW (auto, on, off: `input.touch_controls`), LOOK
+  SENSITIVITY, BUTTON SIZE, OPACITY, and EDIT LAYOUT.
+- **EDIT LAYOUT** opens a code-drawn screen over the paused game (as
+  Online Games is drawn, `browser_screen.c`): drag a control to move it,
+  pinch or a size row to resize, hide/add, Save or Cancel.
+- **Saved in `config.toml`** (one string, as Android's export format),
+  not app preferences, so it travels with the settings. Android could
+  later read it too, giving one layout format: worth raising with
+  Milenko before PR 3.
 
 Each PR: small enough to understand every line, built by the PR's Windows
 job (`.github/workflows/build.yml`, free on a public fork), tested on the
