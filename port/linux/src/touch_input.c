@@ -33,9 +33,15 @@ int touch_game_cinematic_skippable(void);
 int touch_game_cinematic_playing(void);
 int touch_game_playing(void);
 
-/* a tap moves at most this far; a drag of this length is one wheel step */
+/* a tap moves at most this far; with input.touch_scroll "natural", a drag
+of this length is one wheel step */
 #define TOUCH_TAP_SLOP_DP 12.0f
 #define TOUCH_SCROLL_STEP_DP 40.0f
+/* with "follow", a drag of one row is one step, so that the focus keeps
+under the finger: the rows of the Xbox's lists are 36 of the layout's 480
+lines apart (port/assets/menus/chupathingy/main_menu.xml), at any size */
+#define TOUCH_ROW_LINES 36.0f
+#define TOUCH_LAYOUT_LINES 480.0f
 /* the menus post one press a frame and drop presses beyond their queue
 (ui_widget.c): one step a read keeps up with them without losing any */
 #define TOUCH_STEPS_PER_READ 1
@@ -43,6 +49,8 @@ int touch_game_playing(void);
 static struct touch_menu menu;
 static int menu_ready;
 static int menu_active;
+/* the "natural" step, in pixels (menu_setup) */
+static float finger_step;
 /* polls left to hold A: a tap is shorter than the game's poll, and the
 game must see the press */
 static int skip_polls;
@@ -96,7 +104,8 @@ static void menu_setup(void)
 		platform_video_drawable_size(&width, &height);
 
 		settings.slop = TOUCH_TAP_SLOP_DP * (dp > 0.0f ? dp : 1.0f);
-		settings.step = TOUCH_SCROLL_STEP_DP * (dp > 0.0f ? dp : 1.0f);
+		finger_step = TOUCH_SCROLL_STEP_DP * (dp > 0.0f ? dp : 1.0f);
+		settings.step = finger_step;
 		settings.steps_per_read = TOUCH_STEPS_PER_READ;
 		/* no zones until a finger goes down: touch_input_event reads them */
 		settings.edge_left = settings.edge_top = settings.edge_right = settings.edge_bottom = 0.0f;
@@ -124,6 +133,16 @@ static void refresh_zones(int width, int height)
 	menu.settings.height = (float)height;
 }
 
+/* the step a drag takes at every finger down, as input.touch_scroll has it
+then and for the window's height then */
+static void refresh_step(int height)
+{
+	if (scroll_follows_finger() && height > 0)
+		menu.settings.step = (float)height * TOUCH_ROW_LINES / TOUCH_LAYOUT_LINES;
+	else
+		menu.settings.step = finger_step;
+}
+
 void touch_input_event(unsigned int type, const SDL_TouchFingerEvent *finger)
 {
 	int width = 0, height = 0;
@@ -138,6 +157,7 @@ void touch_input_event(unsigned int type, const SDL_TouchFingerEvent *finger)
 	{
 	case SDL_EVENT_FINGER_DOWN:
 		refresh_zones(width, height);
+		refresh_step(height);
 		touch_menu_down(&menu, finger->fingerID, x, y);
 		break;
 	case SDL_EVENT_FINGER_MOTION:
