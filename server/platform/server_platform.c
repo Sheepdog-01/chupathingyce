@@ -272,6 +272,13 @@ void platform_video_window_size(int *width, int *height)
 	*height = 480;
 }
 
+/* (no window: port/linux/src/touch_input.c then sizes its gestures by the
+drawable, which no finger ever reaches here) */
+float platform_video_display_scale(void)
+{
+	return 0.0f;
+}
+
 void platform_video_swap(void)
 {
 }
