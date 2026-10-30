@@ -149,9 +149,9 @@ void touch_input_event(unsigned int type, const SDL_TouchFingerEvent *finger)
 	int width = 0, height = 0;
 	float x, y;
 
-	/* in a game, the on-screen controls' fingers (the desktop's: Android's
-	never come here) */
-	if (!menu_active && touch_overlay_event(type, finger))
+	/* in a game, the on-screen controls' fingers, and all of them while
+	their layout is edited (the desktop's: Android's never come here) */
+	if ((!menu_active || touch_overlay_editing()) && touch_overlay_event(type, finger))
 		return;
 	menu_setup();
 	/* SDL gives 0..1 of the window; the window is its pixels on Android */

@@ -544,13 +544,33 @@ def _setting_screen(folder: str, spec: dict) -> list:
 # lists, by the two SHOWs (menu_functions.c's "port controls update", which
 # writes the help line too, by the controller's own names for its buttons).
 CONTROLS_SCREEN = "controls_setup"
-CONTROLS_DEVICES = ["KEYBOARD/MOUSE", "GAMEPAD"]
+CONTROLS_DEVICES = ["KEYBOARD/MOUSE", "GAMEPAD", "TOUCHSCREEN"]
 CONTROLLER_PAGES = ["SETTINGS", "BUTTONS"]
 CONTROLLER_PRESETS = ["DEFAULT", "SWAP TRIGGERS", "SWAP A, L TRIGGER", "SWAP B, L TRIGGER", "SWAP B, R STICK",
                       "BUMPER JUMPER", "CUSTOM"]
 # (port/linux/game/menu_functions.c's button_row_actions, in order)
 CONTROLLER_ACTIONS = ["FIRE:", "GRENADE:", "MELEE:", "JUMP:", "ACTION / RELOAD:", "SWITCH WEAPON:",
                       "SWITCH GRENADE:", "FLASHLIGHT:", "CROUCH:", "ZOOM:"]
+# the touchscreen's: the on-screen controls (port/linux/src/touch_overlay.c),
+# then EDIT LAYOUT, which opens their layout's editor over the menus
+# ("port touch layout edit"). Android's app draws its own controls and edits
+# their layout itself, so it has the first two alone.
+TOUCH_ROWS = [
+    ("SHOW CONTROLS:", "input.touch_controls", [("AUTO", "auto"), ("ON", "on"), ("OFF", "off")],
+     "AUTO shows the controls once the screen is touched.", "desktop android"),
+    ("MENU SCROLL:", "input.touch_scroll", [("FOLLOW", "follow"), ("NATURAL", "natural")],
+     "FOLLOW moves the choice the way your finger drags.", "desktop android"),
+    ("BUTTON STYLE:", "input.touch_theme", [("XBOX", "xbox"), ("SIMPLE", "simple")],
+     "Draw the buttons as the controller's, or as plain circles.", "desktop"),
+    ("SIZE:", "input.touch_size", [(f"{percent}%", f"{percent / 100:g}")
+                                   for percent in (50, 60, 70, 80, 90, 100, 110, 125, 150, 175, 200)],
+     "Make every control bigger or smaller.", "desktop"),
+    ("OPACITY:", "input.touch_opacity", [(f"{percent}%", f"{percent / 100:g}") for percent in range(10, 101, 10)],
+     "Make the controls more or less see-through.", "desktop"),
+    ("LOOK SENSITIVITY:", "input.touch_sensitivity",
+     [(f"{value:g}", f"{value:g}") for value in (0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4)],
+     "How far a swipe turns the view.", "desktop"),
+]
 CONTROLS_SPEC = {"screen": "controls_settings_screen", "spacing": 24, "help_top": 368, "help_text": True,
                  "header": ("header_profile_controls_settings",
                             f"{PE}/controls_setup/header_profile_controls_settings")}
@@ -663,6 +683,20 @@ def _controls_rows() -> tuple:
     extra += _widget(f"{base}/button_value",
                      [("type", "text"), ("controller", 1), ("width", 147), ("height", 22), ("font", "ui\\large_ui"),
                       ("color", "#FF2896FF"), ("align", "center"), ("text_y", 3), ("text_flags", "no_focus_test")], [])
+    # the touchscreen's
+    mark("touch")
+    settings(TOUCH_ROWS, 1)
+    rows.append((f"{base}/op_touch_layout", "desktop", len(TOUCH_ROWS) + 1))
+    extra += _widget(f"{base}/op_touch_layout",
+                     [("width", 512), ("height", 28), ("flags", "pass_unhandled_to_focused_child"),
+                      ("bitmap", "bitmaps/option_bkds"), ("color", "#FF2896FF")],
+                     ['<on event="a" run="port touch layout edit"/>',
+                      '<on event="start" run="port touch layout edit"/>',
+                      '<on event="left_mouse" run="mouse emit accept event"/>',
+                      f'<child{attributes([("widget", f"{base}/touch_layout_label")])}/>'])
+    extra += _widget(f"{base}/touch_layout_label",
+                     [("type", "text"), ("controller", 1), ("width", 300), ("height", 22), ("text", "EDIT LAYOUT"),
+                      ("font", "ui\\large_ui"), ("color", "#FF2896FF"), ("text_x", 13), ("text_y", 4)], [])
     # (the settings' labels and helps, by label as the settings screens';
     # the other rows' helps are menu_functions.c's own)
     extra += _strings(f"{base}/labels", labels)

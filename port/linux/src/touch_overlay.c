@@ -24,6 +24,14 @@ input.touch_theme draws them with the controller's own button icons
 ("xbox") or as plain labelled circles ("simple"); input.touch_size,
 input.touch_opacity and input.touch_sensitivity scale them, and
 input.touch_layout moves, resizes or hides them (empty: Android's layout).
+
+Controls Setup's EDIT LAYOUT (menu_functions.c) opens the layout's editor
+over the menus (touch_overlay_edit_begin): every control drawn where it
+is, the hidden ones faint, and a panel in the middle. A finger on a control
+chooses it and drags it; the panel's buttons make the chosen one smaller
+or bigger, hide or show it, put the usual layout back, or leave, saving
+input.touch_layout or not. The editor takes the touchscreen, and the menus
+take no input, until it is left.
 */
 
 #include "touch_overlay.h"
@@ -175,23 +183,43 @@ static struct
 	unsigned int buttons;
 	Uint64 pressed_ms[NUMBER_OF_INPUTS];
 	float look[2];
-} overlay = { .layout_read_at = (unsigned long)-1 };
+	/* the layout being edited (touch_overlay_edit_begin): a copy of it, the
+	control chosen, the finger dragging it and its offset from the control's
+	center (on the grid), and the panel's button a finger is on */
+	BOOL editing;
+	struct control edit[MAXIMUM_CONTROLS];
+	int edit_count;
+	int chosen;
+	BOOL dragging;
+	SDL_FingerID drag_finger;
+	float grab_x, grab_y;
+	int tool;
+	SDL_FingerID tool_finger;
+	/* what is drawn next is this solid (the editor's hidden controls) */
+	float fade;
+} overlay = { .layout_read_at = (unsigned long)-1, .fade = 1.0f };
 
 /* ---------- the layout */
 
-static void layout_defaults(void)
+/* Android's layout into controls; how many */
+static int layout_defaults_into(struct control *controls)
 {
 	int kind;
 
 	for (kind = 0; kind < NUMBER_OF_KINDS; kind++)
 	{
-		overlay.controls[kind].kind = kind;
-		overlay.controls[kind].x = kinds[kind].x;
-		overlay.controls[kind].y = kinds[kind].y;
-		overlay.controls[kind].size = 1.0f;
-		overlay.controls[kind].shown = TRUE;
+		controls[kind].kind = kind;
+		controls[kind].x = kinds[kind].x;
+		controls[kind].y = kinds[kind].y;
+		controls[kind].size = 1.0f;
+		controls[kind].shown = TRUE;
 	}
-	overlay.count = NUMBER_OF_KINDS;
+	return NUMBER_OF_KINDS;
+}
+
+static void layout_defaults(void)
+{
+	overlay.count = layout_defaults_into(overlay.controls);
 }
 
 /* input.touch_layout: "kind,x,y,size,shown" for each control, between
@@ -495,11 +523,231 @@ static BOOL shown_now(void)
 	return (overlay.scene & _scene_on) || platform_input_touch_last();
 }
 
+/* ---------- the layout's editor */
+
+enum
+{
+	_tool_smaller,
+	_tool_bigger,
+	_tool_hide,
+	_tool_reset,
+	_tool_cancel,
+	_tool_save,
+
+	NUMBER_OF_TOOLS
+};
+
+#define NO_TOOL (-1)
+/* the panel, in the middle of the 640 columns, between the controls'
+usual places; its buttons along its bottom */
+#define PANEL_X 150.0f
+#define PANEL_Y 150.0f
+#define PANEL_WIDTH 340.0f
+#define PANEL_HEIGHT 100.0f
+#define TOOL_WIDTH 52.0f
+#define TOOL_HEIGHT 24.0f
+#define TOOL_GAP 4.0f
+#define SIZE_STEP 0.1f
+
+static void tool_rect(int tool, float *x, float *y)
+{
+	float row = NUMBER_OF_TOOLS * TOOL_WIDTH + (NUMBER_OF_TOOLS - 1) * TOOL_GAP;
+
+	*x = PANEL_X + (PANEL_WIDTH - row) * 0.5f + (float)tool * (TOOL_WIDTH + TOOL_GAP);
+	*y = PANEL_Y + PANEL_HEIGHT - TOOL_HEIGHT - 10.0f;
+}
+
+static int tool_at(float x, float y)
+{
+	int tool;
+
+	for (tool = 0; tool < NUMBER_OF_TOOLS; tool++)
+	{
+		float left, top;
+
+		tool_rect(tool, &left, &top);
+		if (x >= left && x < left + TOOL_WIDTH && y >= top && y < top + TOOL_HEIGHT)
+			return tool;
+	}
+	return NO_TOOL;
+}
+
+/* the edited control under x, y, the hidden ones too (the last drawn, on
+top, first), or NO_CONTROL */
+static int edit_control_at(const struct view *view, float x, float y)
+{
+	int index;
+
+	for (index = overlay.edit_count - 1; index >= 0; index--)
+	{
+		float center_x, center_y, radius;
+
+		control_place(view, &overlay.edit[index], &center_x, &center_y, &radius);
+		if (inside(x, y, center_x, center_y, radius))
+			return index;
+	}
+	return NO_CONTROL;
+}
+
+static void grid_place(const struct view *view, float x, float y, float *grid_x, float *grid_y)
+{
+	*grid_x = (x - view->left) * GRID_WIDTH / view->width;
+	*grid_y = y * GRID_HEIGHT / LAYOUT_LINES;
+}
+
+/* the edited layout as input.touch_layout has it; empty if it is the usual
+one */
+static void edit_save(void)
+{
+	char text[MAXIMUM_CONTROLS * 40];
+	struct control usual[NUMBER_OF_KINDS];
+	size_t used = 0;
+	BOOL changed = overlay.edit_count != layout_defaults_into(usual);
+	int index;
+
+	text[0] = 0;
+	for (index = 0; index < overlay.edit_count; index++)
+	{
+		const struct control *control = &overlay.edit[index];
+		int written = snprintf(text + used, sizeof(text) - used, "%d,%.1f,%.1f,%.2f,%d;", control->kind,
+			control->x, control->y, control->size, control->shown ? 1 : 0);
+
+		if (written < 0 || (size_t)written >= sizeof(text) - used)
+			break;
+		used += (size_t)written;
+		changed |= index >= NUMBER_OF_KINDS || control->kind != usual[index].kind ||
+			fabsf(control->x - usual[index].x) > 0.05f || fabsf(control->y - usual[index].y) > 0.05f ||
+			fabsf(control->size - 1.0f) > 0.001f || !control->shown;
+	}
+	if (!config_write("input.touch_layout", changed ? text : ""))
+		platform_log("touch: could not save input.touch_layout");
+}
+
+static void edit_tool(int tool)
+{
+	struct control *chosen = overlay.chosen != NO_CONTROL ? &overlay.edit[overlay.chosen] : NULL;
+
+	switch (tool)
+	{
+	case _tool_smaller:
+	case _tool_bigger:
+		if (chosen)
+		{
+			float size = chosen->size + (tool == _tool_bigger ? SIZE_STEP : -SIZE_STEP);
+
+			chosen->size = fminf(2.0f, fmaxf(0.5f, roundf(size * 20.0f) / 20.0f));
+		}
+		break;
+	case _tool_hide:
+		if (chosen)
+			chosen->shown = !chosen->shown;
+		break;
+	case _tool_reset:
+		overlay.edit_count = layout_defaults_into(overlay.edit);
+		overlay.chosen = NO_CONTROL;
+		break;
+	case _tool_save:
+		edit_save();
+		overlay.editing = FALSE;
+		break;
+	case _tool_cancel:
+		overlay.editing = FALSE;
+		break;
+	}
+}
+
+static int edit_event(unsigned int type, const SDL_TouchFingerEvent *finger)
+{
+	struct view view;
+	float x, y;
+
+	if (type == SDL_EVENT_FINGER_CANCELED)
+	{
+		overlay.dragging = FALSE;
+		overlay.tool = NO_TOOL;
+		return 1;
+	}
+	if (!view_get(&view))
+		return 1;
+	finger_place(&view, finger, &x, &y);
+	switch (type)
+	{
+	case SDL_EVENT_FINGER_DOWN:
+		/* (one finger at a time) */
+		if (!overlay.dragging && overlay.tool == NO_TOOL)
+		{
+			int control = edit_control_at(&view, x, y);
+
+			if (control != NO_CONTROL)
+			{
+				float grid_x, grid_y;
+
+				grid_place(&view, x, y, &grid_x, &grid_y);
+				overlay.chosen = control;
+				overlay.dragging = TRUE;
+				overlay.drag_finger = finger->fingerID;
+				overlay.grab_x = overlay.edit[control].x - grid_x;
+				overlay.grab_y = overlay.edit[control].y - grid_y;
+			}
+			else if ((overlay.tool = tool_at(x, y)) != NO_TOOL)
+			{
+				overlay.tool_finger = finger->fingerID;
+			}
+		}
+		break;
+	case SDL_EVENT_FINGER_MOTION:
+		if (overlay.dragging && finger->fingerID == overlay.drag_finger)
+		{
+			struct control *control = &overlay.edit[overlay.chosen];
+			float grid_x, grid_y;
+
+			grid_place(&view, x, y, &grid_x, &grid_y);
+			control->x = fminf(GRID_WIDTH, fmaxf(0.0f, grid_x + overlay.grab_x));
+			control->y = fminf(GRID_HEIGHT, fmaxf(0.0f, grid_y + overlay.grab_y));
+		}
+		break;
+	case SDL_EVENT_FINGER_UP:
+		if (overlay.dragging && finger->fingerID == overlay.drag_finger)
+		{
+			overlay.dragging = FALSE;
+		}
+		else if (overlay.tool != NO_TOOL && finger->fingerID == overlay.tool_finger)
+		{
+			/* (a button acts when it is let go of on it) */
+			if (tool_at(x, y) == overlay.tool)
+				edit_tool(overlay.tool);
+			overlay.tool = NO_TOOL;
+		}
+		break;
+	}
+	return 1;
+}
+
+void touch_overlay_edit_begin(void)
+{
+	layout_read();
+	memcpy(overlay.edit, overlay.controls, sizeof(overlay.controls));
+	overlay.edit_count = overlay.count;
+	overlay.chosen = NO_CONTROL;
+	overlay.dragging = FALSE;
+	overlay.tool = NO_TOOL;
+	overlay.editing = TRUE;
+	release_all();
+	platform_log("touch: editing the layout");
+}
+
+int touch_overlay_editing(void)
+{
+	return overlay.editing;
+}
+
 int touch_overlay_event(unsigned int type, const SDL_TouchFingerEvent *finger)
 {
 	struct view view;
 	float x, y;
 
+	if (overlay.editing)
+		return edit_event(type, finger);
 	if (type == SDL_EVENT_FINGER_CANCELED)
 	{
 		release_all();
@@ -589,8 +837,10 @@ and labels are drawn at 1 / 0.6, so that they are solid at the default
 opacity and fade only below it) */
 static unsigned int faded(unsigned int color, float fraction)
 {
-	float opacity = setting_real("input.touch_opacity", 0.1f, 1.0f, 0.6f);
-	unsigned int alpha = (unsigned int)lroundf((float)(color & 0xFF) * opacity * fraction);
+	/* (the editor shows the controls at the default opacity, so that they
+	can be seen to be placed) */
+	float opacity = overlay.editing ? 0.6f : setting_real("input.touch_opacity", 0.1f, 1.0f, 0.6f);
+	unsigned int alpha = (unsigned int)lroundf((float)(color & 0xFF) * opacity * fraction * overlay.fade);
 
 	return (color & 0xFFFFFF00u) | (alpha > 255 ? 255 : alpha);
 }
@@ -653,12 +903,64 @@ static void draw_button(int kind, float x, float y, float radius, BOOL held, BOO
 	}
 }
 
+/* the editor: the screen dimmed, the panel, and every control, the hidden
+ones faint and the chosen one ringed */
+static void edit_render(const struct view *view, BOOL icons)
+{
+	static const char *const labels[NUMBER_OF_TOOLS] = { "SMALLER", "BIGGER", "HIDE", "RESET", "CANCEL", "SAVE" };
+	int index;
+
+	ui_overlay_layer(2);
+	ui_overlay_rect(view->left, 0.0f, view->width, LAYOUT_LINES, 0.0f, 0x000000B0);
+	ui_overlay_panel(PANEL_X, PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT, 1);
+	ui_overlay_text(UI_FONT_MENU, 16.0f, PANEL_X + PANEL_WIDTH * 0.5f, PANEL_Y + 10.0f, UI_ALIGN_CENTER, 0xFFFFFFFF,
+		"TOUCH CONTROLS LAYOUT");
+	ui_overlay_text(UI_FONT_REGULAR, 11.0f, PANEL_X + PANEL_WIDTH * 0.5f, PANEL_Y + 34.0f, UI_ALIGN_CENTER,
+		0xC8D8F0FF, "Drag a control to move it. Tap one to size or hide it.");
+	for (index = 0; index < NUMBER_OF_TOOLS; index++)
+	{
+		float x, y;
+		/* (the chosen control's buttons do nothing with none chosen) */
+		BOOL usable = index > _tool_hide || overlay.chosen != NO_CONTROL;
+		const char *label = labels[index];
+
+		if (index == _tool_hide && overlay.chosen != NO_CONTROL && !overlay.edit[overlay.chosen].shown)
+			label = "SHOW";
+		tool_rect(index, &x, &y);
+		ui_overlay_rect(x, y, TOOL_WIDTH, TOOL_HEIGHT, 4.0f, overlay.tool == index ? 0x3A6AA0F0 : 0x14243CE0);
+		ui_overlay_outline(x, y, TOOL_WIDTH, TOOL_HEIGHT, 4.0f, 1.0f, usable ? 0x7FB2FFC0 : 0x7FB2FF40);
+		ui_overlay_text(UI_FONT_BOLD, 10.0f, x + TOOL_WIDTH * 0.5f, y + 7.0f, UI_ALIGN_CENTER,
+			usable ? 0xFFFFFFFF : 0xFFFFFF50, label);
+	}
+	ui_overlay_layer(3);
+	for (index = 0; index < overlay.edit_count; index++)
+	{
+		const struct control *control = &overlay.edit[index];
+		float x, y, radius;
+
+		control_place(view, control, &x, &y, &radius);
+		overlay.fade = control->shown ? 1.0f : 0.35f;
+		if (control->kind == _kind_stick)
+			draw_stick(x, y, radius);
+		else
+			draw_button(control->kind, x, y, radius, index == overlay.chosen, icons);
+		overlay.fade = 1.0f;
+		if (index == overlay.chosen)
+			ring(x, y, radius + 3.0f, 2.5f, 0xFFD040FF);
+	}
+}
+
 void touch_overlay_render(void)
 {
 	struct view view;
 	BOOL icons;
 	int index;
 
+	if (overlay.editing && view_get(&view))
+	{
+		edit_render(&view, strcmp(config_string("input.touch_theme"), "simple") != 0);
+		return;
+	}
 	if (!overlay.shown || !view_get(&view))
 		return;
 	layout_read();
@@ -722,6 +1024,15 @@ void touch_overlay_look_read(float *delta)
 
 void touch_overlay_render(void)
 {
+}
+
+void touch_overlay_edit_begin(void)
+{
+}
+
+int touch_overlay_editing(void)
+{
+	return 0;
 }
 
 #endif

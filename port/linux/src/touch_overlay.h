@@ -41,4 +41,10 @@ void touch_overlay_look_read(float *delta);
 the code-drawn screens are drawn) */
 void touch_overlay_render(void);
 
+/* opens the layout's editor over the menus (Controls Setup's EDIT LAYOUT:
+menu_functions.c); while it is open it takes every finger, and the menus
+take no input (ui_widget.c) */
+void touch_overlay_edit_begin(void);
+int touch_overlay_editing(void);
+
 #endif

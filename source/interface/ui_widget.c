@@ -728,9 +728,10 @@ void invite_prompt_pointer(struct halo_ui_pointer const *pointer);
 void moderation_screen_pointer(struct halo_ui_pointer const *pointer);
 void invite_prompt_render(void);
 #ifdef HALO_GAME_BROWSER
-/* the desktop's on-screen touch controls, over a game
-(port/linux/src/touch_overlay.c) */
+/* the desktop's on-screen touch controls, over a game, and their layout's
+editor over the menus (port/linux/src/touch_overlay.c) */
 void touch_overlay_render(void);
+int touch_overlay_editing(void);
 #endif
 /* (ONLINE GAMES, below: its list moves focus item by item) */
 boolean ui_widget_online_games_list(struct widget_instance *widget);
@@ -9364,6 +9365,17 @@ void process_ui_widgets(
 		widget_globals.initialized);
 	widget_globals.current_system_milliseconds = system_milliseconds();
 	widget_pool_log_update();
+#ifdef HALO_GAME_BROWSER
+	/* port: the touch controls' layout edited over the menus
+	(port/linux/src/touch_overlay.c), which takes the touchscreen: the menus
+	take nothing meanwhile, not even the mouse */
+	if (touch_overlay_editing())
+	{
+		event_manager_flush();
+
+		return;
+	}
+#endif
 #ifndef HALO_XBOX_CONSOLE
 	ui_widgets_process_mouse();
 	if (ui_widget_port_press_controller != NONE)

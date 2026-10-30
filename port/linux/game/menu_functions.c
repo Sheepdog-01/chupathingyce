@@ -2819,6 +2819,9 @@ enum
 {
 	_controls_device_keyboard_mouse,
 	_controls_device_gamepad,
+	/* (the touch controls' settings, and their layout's editor:
+	port/linux/src/touch_overlay.c) */
+	_controls_device_touch,
 };
 
 static struct
@@ -2828,6 +2831,11 @@ static struct
 
 #ifndef HALO_CONSOLE_NO_CONTROLS
 int platform_input_scheme(void);
+#endif
+#ifdef HALO_GAME_BROWSER
+/* (xinput_sdl.c's BOOL, an int; touch_overlay.c) */
+int platform_input_touch_last(void);
+void touch_overlay_edit_begin(void);
 #endif
 
 static short spinner_shown(struct widget_instance *list, char const *name)
@@ -2849,6 +2857,8 @@ static char const *controls_page_view(struct widget_instance *list)
 {
 	if (controls_device_shown(list) == _controls_device_keyboard_mouse)
 		return spinner_shown(list, "group_spinner") == CONTROL_GROUP_MOUSE ? "mouse" : "keyboard";
+	if (controls_device_shown(list) == _controls_device_touch)
+		return "touch";
 #ifdef HALO_SWITCH_CONSOLE
 	/* port: the controller's third page, the gyroscope's settings (the
 	Switch's rows: tools/switch_menus.py in its port) */
@@ -2885,6 +2895,13 @@ static boolean controls_page_init(struct widget_instance *list)
 	{
 		device->parameters.list.selected_index = platform_input_scheme() == 0 ?
 			_controls_device_keyboard_mouse : _controls_device_gamepad;
+#ifdef HALO_GAME_BROWSER
+		/* (the touchscreen's page, when a finger opened the screen; on
+		Android, whose app draws its controls and edits their layout, the
+		page has only the settings the game reads) */
+		if (platform_input_touch_last())
+			device->parameters.list.selected_index = _controls_device_touch;
+#endif
 	}
 #else
 	if (device)
@@ -2926,7 +2943,9 @@ static void controls_page_update(struct widget_instance *list)
 	if (!help || !focused)
 		return;
 	if (focused == named(list, "op_device", 0))
-		line = "Choose the keyboard and mouse, or a controller.";
+		line = "Choose the keyboard and mouse, a controller, or the touchscreen.";
+	else if (focused == named(list, "op_touch_layout", 0))
+		line = "Move, size or hide the on-screen controls.";
 	else if (focused == named(list, "op_group", 0))
 		line = "Choose a group of keys, or the mouse.";
 	else if (focused == named(list, "op_page", 0))
@@ -2987,6 +3006,13 @@ static boolean controls_page_defaults(struct widget_instance *widget)
 		/* (the keys written at once, as each key set is) */
 		controls_save();
 		settings_each_in_view(list, "mouse", setting_default_show);
+		return TRUE;
+	}
+	/* (the touchscreen's settings; its layout has its own RESET, in its
+	editor) */
+	if (controls_device_shown(list) == _controls_device_touch)
+	{
+		settings_each_in_view(list, "touch", setting_default_show);
 		return TRUE;
 	}
 	settings_each_in_view(list, "gamepad", setting_default_show);
@@ -9023,6 +9049,15 @@ boolean pc_menu_event_function_invoke(
 		{
 			return controls_page_closed();
 		}
+#ifdef HALO_GAME_BROWSER
+		/* (Controls Setup's EDIT LAYOUT: the touch controls' editor, over
+		the menus until it is left) */
+		else if (!strcmp(name, "port touch layout edit"))
+		{
+			touch_overlay_edit_begin();
+			return TRUE;
+		}
+#endif
 		else if (!strcmp(name, "controls screen init") || !strcmp(name, "controls screen defaults"))
 		{
 			return controls_load(!strcmp(name, "controls screen defaults"));

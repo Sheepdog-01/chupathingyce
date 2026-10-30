@@ -410,6 +410,8 @@ static char const *const port_function_names[] =
 	/* (the settings screens' nested lists, and Controls Setup's) */
 	"port settings views init", "port settings view", "port settings back", "port settings accept",
 	"port controls init", "port controls defaults", "port controls accept", "port controls closed",
+	/* (its touchscreen page's EDIT LAYOUT) */
+	"port touch layout edit",
 };
 
 /* the PC version's game data functions that the Xbox's have not, from
