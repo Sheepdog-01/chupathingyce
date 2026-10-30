@@ -38,7 +38,7 @@ take no input, until it is left.
 
 #include <string.h>
 
-#ifndef HALO_ANDROID
+#ifdef HALO_DESKTOP_TOUCH
 
 #include "platform.h"
 #include "sdl_platform.h"
@@ -199,6 +199,8 @@ static struct
 	float fade;
 } overlay = { .layout_read_at = (unsigned long)-1, .fade = 1.0f };
 
+static void release_all(void);
+
 /* ---------- the layout */
 
 /* Android's layout into controls; how many */
@@ -227,12 +229,15 @@ semicolons, x and y on the 960x540 grid; empty, or a mistake, gives
 Android's layout */
 static void layout_read(void)
 {
+	struct control before[MAXIMUM_CONTROLS];
+	int before_count = overlay.count;
 	const char *text;
 	int count = 0;
 
 	if (overlay.layout_read_at == config_changes())
 		return;
 	overlay.layout_read_at = config_changes();
+	memcpy(before, overlay.controls, sizeof(before));
 	text = config_string("input.touch_layout");
 	while (*text && count < MAXIMUM_CONTROLS)
 	{
@@ -258,6 +263,10 @@ static void layout_read(void)
 		overlay.count = count;
 	else
 		layout_defaults();
+	/* (a finger holds a control by its place in the layout: a layout that
+	changed under it lets everything go) */
+	if (overlay.count != before_count || memcmp(before, overlay.controls, sizeof(before)))
+		release_all();
 }
 
 /* ---------- where things are */
@@ -656,6 +665,63 @@ static void edit_tool(int tool)
 	}
 }
 
+/* a finger (or the mouse) at x, y in the overlay's units: a down on one of
+the panel's buttons presses it, one on a control chooses it and drags it
+(one at a time); a button acts when it is let go of on it */
+static void edit_pointer(const struct view *view, unsigned int type, SDL_FingerID id, float x, float y)
+{
+	switch (type)
+	{
+	case SDL_EVENT_FINGER_DOWN:
+		if (!overlay.dragging && overlay.tool == NO_TOOL)
+		{
+			int control;
+
+			/* (the panel's buttons first: a control left over them must not
+			keep SAVE or CANCEL from being pressed) */
+			if ((overlay.tool = tool_at(x, y)) != NO_TOOL)
+			{
+				overlay.tool_finger = id;
+			}
+			else if ((control = edit_control_at(view, x, y)) != NO_CONTROL)
+			{
+				float grid_x, grid_y;
+
+				grid_place(view, x, y, &grid_x, &grid_y);
+				overlay.chosen = control;
+				overlay.dragging = TRUE;
+				overlay.drag_finger = id;
+				overlay.grab_x = overlay.edit[control].x - grid_x;
+				overlay.grab_y = overlay.edit[control].y - grid_y;
+			}
+		}
+		break;
+	case SDL_EVENT_FINGER_MOTION:
+		if (overlay.dragging && id == overlay.drag_finger)
+		{
+			struct control *control = &overlay.edit[overlay.chosen];
+			float grid_x, grid_y;
+
+			grid_place(view, x, y, &grid_x, &grid_y);
+			control->x = fminf(GRID_WIDTH, fmaxf(0.0f, grid_x + overlay.grab_x));
+			control->y = fminf(GRID_HEIGHT, fmaxf(0.0f, grid_y + overlay.grab_y));
+		}
+		break;
+	case SDL_EVENT_FINGER_UP:
+		if (overlay.dragging && id == overlay.drag_finger)
+		{
+			overlay.dragging = FALSE;
+		}
+		else if (overlay.tool != NO_TOOL && id == overlay.tool_finger)
+		{
+			if (tool_at(x, y) == overlay.tool)
+				edit_tool(overlay.tool);
+			overlay.tool = NO_TOOL;
+		}
+		break;
+	}
+}
+
 static int edit_event(unsigned int type, const SDL_TouchFingerEvent *finger)
 {
 	struct view view;
@@ -670,57 +736,32 @@ static int edit_event(unsigned int type, const SDL_TouchFingerEvent *finger)
 	if (!view_get(&view))
 		return 1;
 	finger_place(&view, finger, &x, &y);
-	switch (type)
-	{
-	case SDL_EVENT_FINGER_DOWN:
-		/* (one finger at a time) */
-		if (!overlay.dragging && overlay.tool == NO_TOOL)
-		{
-			int control = edit_control_at(&view, x, y);
-
-			if (control != NO_CONTROL)
-			{
-				float grid_x, grid_y;
-
-				grid_place(&view, x, y, &grid_x, &grid_y);
-				overlay.chosen = control;
-				overlay.dragging = TRUE;
-				overlay.drag_finger = finger->fingerID;
-				overlay.grab_x = overlay.edit[control].x - grid_x;
-				overlay.grab_y = overlay.edit[control].y - grid_y;
-			}
-			else if ((overlay.tool = tool_at(x, y)) != NO_TOOL)
-			{
-				overlay.tool_finger = finger->fingerID;
-			}
-		}
-		break;
-	case SDL_EVENT_FINGER_MOTION:
-		if (overlay.dragging && finger->fingerID == overlay.drag_finger)
-		{
-			struct control *control = &overlay.edit[overlay.chosen];
-			float grid_x, grid_y;
-
-			grid_place(&view, x, y, &grid_x, &grid_y);
-			control->x = fminf(GRID_WIDTH, fmaxf(0.0f, grid_x + overlay.grab_x));
-			control->y = fminf(GRID_HEIGHT, fmaxf(0.0f, grid_y + overlay.grab_y));
-		}
-		break;
-	case SDL_EVENT_FINGER_UP:
-		if (overlay.dragging && finger->fingerID == overlay.drag_finger)
-		{
-			overlay.dragging = FALSE;
-		}
-		else if (overlay.tool != NO_TOOL && finger->fingerID == overlay.tool_finger)
-		{
-			/* (a button acts when it is let go of on it) */
-			if (tool_at(x, y) == overlay.tool)
-				edit_tool(overlay.tool);
-			overlay.tool = NO_TOOL;
-		}
-		break;
-	}
+	edit_pointer(&view, type, finger->fingerID, x, y);
 	return 1;
+}
+
+/* (the mouse, as a finger of its own) */
+#define MOUSE_FINGER ((SDL_FingerID)-1)
+
+void touch_overlay_edit_mouse(unsigned int type, float window_x, float window_y)
+{
+	struct view view;
+
+	if (!overlay.editing || !view_get(&view))
+		return;
+	edit_pointer(&view, type, MOUSE_FINGER, (window_x - view.window_x0) / view.window_scale_x,
+		(window_y - view.window_y0) / view.window_scale_y);
+}
+
+void touch_overlay_edit_cancel(void)
+{
+	if (overlay.editing)
+		edit_tool(_tool_cancel);
+}
+
+int touch_overlay_touched_last(void)
+{
+	return platform_input_touch_last();
 }
 
 void touch_overlay_edit_begin(void)
@@ -917,6 +958,8 @@ static void edit_render(const struct view *view, BOOL icons)
 		"TOUCH CONTROLS LAYOUT");
 	ui_overlay_text(UI_FONT_REGULAR, 11.0f, PANEL_X + PANEL_WIDTH * 0.5f, PANEL_Y + 34.0f, UI_ALIGN_CENTER,
 		0xC8D8F0FF, "Drag a control to move it. Tap one to size or hide it.");
+	ui_overlay_text(UI_FONT_REGULAR, 9.0f, PANEL_X + PANEL_WIDTH * 0.5f, PANEL_Y + 50.0f, UI_ALIGN_CENTER,
+		0x9FB4D0FF, "The mouse works too. Escape, or B on a controller, cancels.");
 	for (index = 0; index < NUMBER_OF_TOOLS; index++)
 	{
 		float x, y;
@@ -948,6 +991,7 @@ static void edit_render(const struct view *view, BOOL icons)
 		if (index == overlay.chosen)
 			ring(x, y, radius + 3.0f, 2.5f, 0xFFD040FF);
 	}
+	ui_overlay_layer(0);
 }
 
 void touch_overlay_render(void)
@@ -995,7 +1039,8 @@ void touch_overlay_render(void)
 
 #else
 
-/* (Android: the app draws its own controls, TouchControls.java) */
+/* (Android, whose app draws its own controls, TouchControls.java, and the
+consoles) */
 int touch_overlay_event(unsigned int type, const SDL_TouchFingerEvent *finger)
 {
 	(void)type;
@@ -1031,6 +1076,22 @@ void touch_overlay_edit_begin(void)
 }
 
 int touch_overlay_editing(void)
+{
+	return 0;
+}
+
+void touch_overlay_edit_cancel(void)
+{
+}
+
+void touch_overlay_edit_mouse(unsigned int type, float window_x, float window_y)
+{
+	(void)type;
+	(void)window_x;
+	(void)window_y;
+}
+
+int touch_overlay_touched_last(void)
 {
 	return 0;
 }

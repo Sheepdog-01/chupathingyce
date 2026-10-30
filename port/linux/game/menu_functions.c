@@ -2833,8 +2833,8 @@ static struct
 int platform_input_scheme(void);
 #endif
 #ifdef HALO_GAME_BROWSER
-/* (xinput_sdl.c's BOOL, an int; touch_overlay.c) */
-int platform_input_touch_last(void);
+/* (port/linux/src/touch_overlay.c) */
+int touch_overlay_touched_last(void);
 void touch_overlay_edit_begin(void);
 #endif
 
@@ -2899,7 +2899,7 @@ static boolean controls_page_init(struct widget_instance *list)
 		/* (the touchscreen's page, when a finger opened the screen; on
 		Android, whose app draws its controls and edits their layout, the
 		page has only the settings the game reads) */
-		if (platform_input_touch_last())
+		if (touch_overlay_touched_last())
 			device->parameters.list.selected_index = _controls_device_touch;
 #endif
 	}

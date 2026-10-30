@@ -713,6 +713,9 @@ static void keyboard_controls(const struct platform_input_state *input, XINPUT_G
 				held |= 1UL << action;
 		}
 	}
+	/* (a key or mouse button held in play: the touch controls hide) */
+	if (held)
+		last_input_touch = FALSE;
 	if (held & (1UL << HALO_KEYBOARD_PAUSE))
 		pad->wButtons |= XINPUT_GAMEPAD_START;
 	if (held & (1UL << HALO_KEYBOARD_SCOREBOARD))

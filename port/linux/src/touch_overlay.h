@@ -7,7 +7,7 @@ controller for player 1. They are what Android's are
 (port/android/app/.../TouchControls.java), with the same layout, and they
 reach the game the same way: touch_input.c's touch_input_controls and
 touch_input_look read them as Android's host_touch_* functions are read.
-On Android every function here does nothing (the app draws its own).
+On Android and the consoles every function here does nothing.
 
 Main thread only, as the rest of touch_input.c.
 */
@@ -16,6 +16,14 @@ Main thread only, as the rest of touch_input.c.
 #define TOUCH_OVERLAY_H
 
 #include <SDL3/SDL_events.h>
+
+/* the desktop builds' touchscreen code (this, and touch_input.c's and
+sdl_platform.c's parts of it): not Android's, whose app has its own, nor the
+consoles', whose ports decide their touchscreens for themselves; on those
+the functions here do nothing */
+#if !defined(HALO_ANDROID) && !defined(HALO_CONSOLE)
+#define HALO_DESKTOP_TOUCH
+#endif
 
 /* a finger of the touchscreen, in a game; nonzero if the controls took it
 (they show), zero if it is the menus' (touch_menu.c) */
@@ -46,5 +54,16 @@ menu_functions.c); while it is open it takes every finger, and the menus
 take no input (ui_widget.c) */
 void touch_overlay_edit_begin(void);
 int touch_overlay_editing(void);
+
+/* the editor by the keyboard, a controller or the mouse (sdl_platform.c),
+so that it can be left without a touchscreen: leaves it unsaved (Escape,
+B), or a mouse button at a point of the window (in its units) or the mouse
+moved with it held, as a finger there */
+void touch_overlay_edit_cancel(void);
+void touch_overlay_edit_mouse(unsigned int type, float window_x, float window_y);
+
+/* whether the touchscreen was the device used last (Controls Setup opens
+on its page then: menu_functions.c) */
+int touch_overlay_touched_last(void);
 
 #endif

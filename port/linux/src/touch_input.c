@@ -66,7 +66,7 @@ static float pixels_per_dp(void)
 
 	if (density && atof(density) > 0.0)
 		return (float)atof(density);
-#ifndef HALO_ANDROID
+#ifdef HALO_DESKTOP_TOUCH
 	/* a display scale of 1 is 96 pixels to the inch, and a dp a 160th */
 	if (platform_video_display_scale() > 0.0f)
 		return platform_video_display_scale() * 96.0f / 160.0f;

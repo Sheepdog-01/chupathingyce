@@ -3712,12 +3712,14 @@ int config_write(const char *name, const char *value)
 {
 	const char *dot = strchr(name, '.');
 	long index = config_setting_index(name);
-	char section[64], key[64], line_text[600], path[1024];
+	/* (a value up to a kilobyte: input.touch_layout's is a few hundred
+	characters) */
+	char section[64], key[64], line_text[1200], path[1024];
 	size_t size = 0;
 	char *text, *changed;
 	int succeeded;
 
-	if (index < 0 || !dot || (size_t)(dot - name) >= sizeof(section) || strlen(value) > 256)
+	if (index < 0 || !dot || (size_t)(dot - name) >= sizeof(section) || strlen(value) > 1023)
 		return 0;
 	/* (the file read first, as the other settings are) */
 	config_value(name, config_settings[index].type);

@@ -22,11 +22,13 @@ and the debug keyboard that the game's console reads.
 #include "pc_disc.h"
 #include "ce_installer.h"
 #include "touch_input.h"
+#include "touch_overlay.h"
 #include "delta.h"
 #include "crash_report.h"
 #include "launcher.h"
 
 #include <SDL3/SDL.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -384,10 +386,12 @@ BOOL platform_sdl_initialize(void)
 	SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
 	SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
 #endif
+#if defined(HALO_ANDROID) || defined(HALO_DESKTOP_TOUCH)
 	/* a finger is only a finger (touch_input.c): as a mouse it would aim and
 	fire, the mouse driving the controller emulation in xinput_sdl.c */
 	SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
-#ifndef HALO_ANDROID
+#endif
+#ifdef HALO_DESKTOP_TOUCH
 	/* on a computer a pen stays a mouse, not a finger as well (on a phone,
 	a stylus taps as a finger does) */
 	SDL_SetHint(SDL_HINT_PEN_TOUCH_EVENTS, "0");
@@ -1513,7 +1517,7 @@ void platform_video_drawable_size(int *width, int *height)
 	SDL_GetWindowSizeInPixels(platform_window, width, height);
 }
 
-#ifndef HALO_ANDROID
+#ifdef HALO_DESKTOP_TOUCH
 float platform_video_display_scale(void)
 {
 	return platform_window ? SDL_GetWindowDisplayScale(platform_window) : 0.0f;
@@ -2096,7 +2100,7 @@ void platform_scoreboard_scroll(int open, long *notches, long *pages)
 	pthread_mutex_unlock(&input_lock);
 }
 
-#ifndef HALO_ANDROID
+#ifdef HALO_DESKTOP_TOUCH
 /* a finger went down on the touchscreen: it drives the menus' pointer, whose
 arrow hides, and the prompts show the controller's buttons; under input_lock */
 static void pointer_from_touch(void)
@@ -2211,6 +2215,16 @@ void platform_pump_events(void)
 			exit(EXIT_SUCCESS);
 		case SDL_EVENT_KEY_DOWN:
 		case SDL_EVENT_KEY_UP:
+#ifdef HALO_DESKTOP_TOUCH
+			/* the touch layout's editor takes the keys: Escape leaves it,
+			when let go of, so that the menus do not find it held */
+			if (touch_overlay_editing())
+			{
+				if (!event.key.down && event.key.scancode == SDL_SCANCODE_ESCAPE)
+					touch_overlay_edit_cancel();
+				break;
+			}
+#endif
 			if (event.key.scancode < SDL_SCANCODE_COUNT)
 			{
 				input_state.keys[event.key.scancode] = event.key.down;
@@ -2251,10 +2265,24 @@ void platform_pump_events(void)
 #endif
 			break;
 		case SDL_EVENT_MOUSE_MOTION:
+#ifdef HALO_DESKTOP_TOUCH
+			/* (the editor's: a drag with the left button) */
+			if (touch_overlay_editing())
+			{
+				if (mouse_buttons_down & (1u << SDL_BUTTON_LEFT))
+					touch_overlay_edit_mouse(SDL_EVENT_FINGER_MOTION, event.motion.x, event.motion.y);
+				break;
+			}
+#endif
 #ifndef HALO_ANDROID
-			/* in the menus the mouse moves the pointer, not the view */
+			/* in the menus the mouse moves the pointer, not the view; moved
+			for real, it takes the pointer back from the touchscreen */
 			if (input_state.ui_pointer)
 			{
+#ifdef HALO_DESKTOP_TOUCH
+				if (fabsf(event.motion.xrel) + fabsf(event.motion.yrel) > 2.0f)
+					pointer_from_mouse();
+#endif
 				ui_pointer.x = event.motion.x;
 				ui_pointer.y = event.motion.y;
 				ui_pointer.moved = TRUE;
@@ -2273,6 +2301,24 @@ void platform_pump_events(void)
 				else
 					mouse_buttons_down &= ~(1u << event.button.button);
 			}
+#ifdef HALO_DESKTOP_TOUCH
+			/* the editor's: the left button as a finger, the right one
+			leaving it (when let go of) */
+			if (touch_overlay_editing())
+			{
+				pointer_from_mouse();
+				if (event.button.button == SDL_BUTTON_LEFT)
+				{
+					touch_overlay_edit_mouse(event.button.down ? SDL_EVENT_FINGER_DOWN : SDL_EVENT_FINGER_UP,
+						event.button.x, event.button.y);
+				}
+				else if (!event.button.down && event.button.button == SDL_BUTTON_RIGHT)
+				{
+					touch_overlay_edit_cancel();
+				}
+				break;
+			}
+#endif
 			if (binding_capture == _binding_capture_waiting && event.button.down &&
 				event.button.button < PLATFORM_MOUSE_BUTTON_COUNT)
 			{
@@ -2288,8 +2334,10 @@ void platform_pump_events(void)
 			that resumes the game does not also fire */
 			if (input_state.ui_pointer)
 			{
+#ifdef HALO_DESKTOP_TOUCH
 				if (event.button.down)
 					pointer_from_mouse();
+#endif
 				if (event.button.down && event.button.button == SDL_BUTTON_LEFT)
 				{
 					ui_pointer.left_clicks++;
@@ -2338,7 +2386,9 @@ void platform_pump_events(void)
 #ifndef HALO_ANDROID
 			if (input_state.ui_pointer)
 			{
+#ifdef HALO_DESKTOP_TOUCH
 				pointer_from_mouse();
+#endif
 				/* whole notches: smooth-scrolling wheels send fractions */
 				ui_pointer_wheel += event.wheel.y;
 				while (ui_pointer_wheel >= 1.0f)
@@ -2371,11 +2421,12 @@ void platform_pump_events(void)
 				platform_mouse_capture(TRUE);
 #endif
 			break;
+#if defined(HALO_ANDROID) || defined(HALO_DESKTOP_TOUCH)
 		case SDL_EVENT_FINGER_DOWN:
 		case SDL_EVENT_FINGER_MOTION:
 		case SDL_EVENT_FINGER_UP:
 		case SDL_EVENT_FINGER_CANCELED:
-#ifndef HALO_ANDROID
+#ifdef HALO_DESKTOP_TOUCH
 			/* (a touchpad's fingers are the mouse's, which SDL already
 			reports: only a touchscreen's go to the game) */
 			if (SDL_GetTouchDeviceType(event.tfinger.touchID) != SDL_TOUCH_DEVICE_DIRECT)
@@ -2385,6 +2436,18 @@ void platform_pump_events(void)
 #endif
 			touch_input_event(event.type, &event.tfinger);
 			break;
+#endif
+#ifdef HALO_DESKTOP_TOUCH
+		/* (the touch layout's editor: B or Back leaves it, when let go of,
+		as Escape does; the controller is otherwise read by polling) */
+		case SDL_EVENT_GAMEPAD_BUTTON_UP:
+			if (touch_overlay_editing() &&
+				(event.gbutton.button == SDL_GAMEPAD_BUTTON_EAST || event.gbutton.button == SDL_GAMEPAD_BUTTON_BACK))
+			{
+				touch_overlay_edit_cancel();
+			}
+			break;
+#endif
 		case SDL_EVENT_GAMEPAD_ADDED:
 #ifdef HALO_ANDROID
 			/* (the guest reaches SDL only through host_imports.list, which
@@ -2488,6 +2551,10 @@ void platform_ui_pointer_set_active(BOOL active)
 	memset(input_state.mouse_buttons, 0, sizeof(input_state.mouse_buttons));
 	memset(mouse_buttons_pressed, 0, sizeof(mouse_buttons_pressed));
 	touch_input_menu_set_active(active != FALSE);
+	/* (a menu that opens is the device's used last: a touch long ago does
+	not keep the mouse from it) */
+	if (active)
+		pointer_touch = touch_overlay_touched_last() != 0;
 	pthread_mutex_unlock(&input_lock);
 	platform_mouse_capture(!active && !input_state.mouse_released);
 	if (active)
@@ -2495,8 +2562,10 @@ void platform_ui_pointer_set_active(BOOL active)
 		int width, height;
 
 		SDL_GetWindowSize(platform_window, &width, &height);
-		SDL_WarpMouseInWindow(platform_window, width * 0.5f, height * 0.5f);
-		/* (no arrow for a finger to chase) */
+		/* (no arrow for a finger to chase, nor a warp, whose motion would
+		read as the mouse's) */
+		if (!pointer_touch)
+			SDL_WarpMouseInWindow(platform_window, width * 0.5f, height * 0.5f);
 		show_pointer(!pointer_touch);
 		pthread_mutex_lock(&input_lock);
 		ui_pointer.x = width * 0.5f;
