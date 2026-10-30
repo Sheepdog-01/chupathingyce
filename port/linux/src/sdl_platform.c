@@ -53,6 +53,9 @@ static unsigned char mouse_buttons_pressed[PLATFORM_MOUSE_BUTTON_COUNT];
 /* the menus' pointer (platform_ui_pointer_set_active), under input_lock */
 static struct platform_ui_pointer ui_pointer;
 static float ui_pointer_wheel;
+/* the touchscreen drives the menus' pointer (touch_input.c): a finger went
+down since the mouse last clicked or turned its wheel */
+static BOOL pointer_touch;
 #endif
 static pthread_mutex_t input_lock = PTHREAD_MUTEX_INITIALIZER;
 /* rebinding (platform_binding_capture_begin), under input_lock: waiting for
@@ -380,9 +383,14 @@ BOOL platform_sdl_initialize(void)
 	instead of closing the activity */
 	SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
 	SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
-	/* touching the screen must not aim or fire (the mouse drives the
-	controller emulation in xinput_sdl.c) */
+#endif
+	/* a finger is only a finger (touch_input.c): as a mouse it would aim and
+	fire, the mouse driving the controller emulation in xinput_sdl.c */
 	SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+#ifndef HALO_ANDROID
+	/* on a computer a pen stays a mouse, not a finger as well (on a phone,
+	a stylus taps as a finger does) */
+	SDL_SetHint(SDL_HINT_PEN_TOUCH_EVENTS, "0");
 #endif
 #ifdef HALO_GAME_BROWSER
 	/* the dedicated server and a probe play no sound and need no display
@@ -1505,6 +1513,13 @@ void platform_video_drawable_size(int *width, int *height)
 	SDL_GetWindowSizeInPixels(platform_window, width, height);
 }
 
+#ifndef HALO_ANDROID
+float platform_video_display_scale(void)
+{
+	return platform_window ? SDL_GetWindowDisplayScale(platform_window) : 0.0f;
+}
+#endif
+
 /* with vsync off, the time between frames display.max_fps asks for (0:
 twice the display's refresh rate), or 0 for no limit. A GPU never left idle
 can hang (Intel's Raptor Lake graphics, whose reset then takes the desktop
@@ -2081,6 +2096,30 @@ void platform_scoreboard_scroll(int open, long *notches, long *pages)
 	pthread_mutex_unlock(&input_lock);
 }
 
+#ifndef HALO_ANDROID
+/* a finger went down on the touchscreen: it drives the menus' pointer, whose
+arrow hides, and the prompts show the controller's buttons; under input_lock */
+static void pointer_from_touch(void)
+{
+	platform_input_touch_used();
+	if (pointer_touch)
+		return;
+	pointer_touch = TRUE;
+	if (input_state.ui_pointer)
+		show_pointer(FALSE);
+}
+
+/* the mouse clicked or turned its wheel in the menus: it drives their
+pointer again; under input_lock */
+static void pointer_from_mouse(void)
+{
+	if (!pointer_touch)
+		return;
+	pointer_touch = FALSE;
+	show_pointer(TRUE);
+}
+#endif
+
 void platform_pump_events(void)
 {
 	/* debug.exit_after (seconds) ends the game that long after the window
@@ -2249,6 +2288,8 @@ void platform_pump_events(void)
 			that resumes the game does not also fire */
 			if (input_state.ui_pointer)
 			{
+				if (event.button.down)
+					pointer_from_mouse();
 				if (event.button.down && event.button.button == SDL_BUTTON_LEFT)
 				{
 					ui_pointer.left_clicks++;
@@ -2297,6 +2338,7 @@ void platform_pump_events(void)
 #ifndef HALO_ANDROID
 			if (input_state.ui_pointer)
 			{
+				pointer_from_mouse();
 				/* whole notches: smooth-scrolling wheels send fractions */
 				ui_pointer_wheel += event.wheel.y;
 				while (ui_pointer_wheel >= 1.0f)
@@ -2319,9 +2361,7 @@ void platform_pump_events(void)
 			memset(input_state.mouse_buttons, 0, sizeof(input_state.mouse_buttons));
 			memset(mouse_buttons_pressed, 0, sizeof(mouse_buttons_pressed));
 			input_state.focused = FALSE;
-#ifdef HALO_ANDROID
 			touch_input_cancel();
-#endif
 			break;
 		case SDL_EVENT_WINDOW_FOCUS_GAINED:
 			input_state.focused = TRUE;
@@ -2331,14 +2371,20 @@ void platform_pump_events(void)
 				platform_mouse_capture(TRUE);
 #endif
 			break;
-#ifdef HALO_ANDROID
 		case SDL_EVENT_FINGER_DOWN:
 		case SDL_EVENT_FINGER_MOTION:
 		case SDL_EVENT_FINGER_UP:
 		case SDL_EVENT_FINGER_CANCELED:
+#ifndef HALO_ANDROID
+			/* (a touchpad's fingers are the mouse's, which SDL already
+			reports: only a touchscreen's go to the game) */
+			if (SDL_GetTouchDeviceType(event.tfinger.touchID) != SDL_TOUCH_DEVICE_DIRECT)
+				break;
+			if (event.type == SDL_EVENT_FINGER_DOWN)
+				pointer_from_touch();
+#endif
 			touch_input_event(event.type, &event.tfinger);
 			break;
-#endif
 		case SDL_EVENT_GAMEPAD_ADDED:
 #ifdef HALO_ANDROID
 			/* (the guest reaches SDL only through host_imports.list, which
@@ -2441,6 +2487,7 @@ void platform_ui_pointer_set_active(BOOL active)
 	input_state.mouse_wheel = 0.0f;
 	memset(input_state.mouse_buttons, 0, sizeof(input_state.mouse_buttons));
 	memset(mouse_buttons_pressed, 0, sizeof(mouse_buttons_pressed));
+	touch_input_menu_set_active(active != FALSE);
 	pthread_mutex_unlock(&input_lock);
 	platform_mouse_capture(!active && !input_state.mouse_released);
 	if (active)
@@ -2449,7 +2496,8 @@ void platform_ui_pointer_set_active(BOOL active)
 
 		SDL_GetWindowSize(platform_window, &width, &height);
 		SDL_WarpMouseInWindow(platform_window, width * 0.5f, height * 0.5f);
-		show_pointer(TRUE);
+		/* (no arrow for a finger to chase) */
+		show_pointer(!pointer_touch);
 		pthread_mutex_lock(&input_lock);
 		ui_pointer.x = width * 0.5f;
 		ui_pointer.y = height * 0.5f;
@@ -2503,14 +2551,20 @@ void platform_test_pointer_event(float x, float y, int button, int wheel)
 	SDL_PushEvent(&event);
 }
 
-/* what the pointer did since the last call; FALSE when it is not active */
+/* what the pointer did since the last call, the mouse's or the
+touchscreen's, whichever was used last; FALSE when it is not active */
 BOOL platform_ui_pointer_read(struct platform_ui_pointer *pointer)
 {
 	BOOL active;
 
 	pthread_mutex_lock(&input_lock);
 	active = input_state.ui_pointer;
-	*pointer = ui_pointer;
+	if (pointer_touch)
+		touch_input_menu_read(pointer);
+	else
+		*pointer = ui_pointer;
+	/* (the mouse's clicks and notches are spent either way: the mouse's
+	turn starts afresh) */
 	ui_pointer.moved = FALSE;
 	ui_pointer.left_clicks = 0;
 	ui_pointer.right_clicks = 0;

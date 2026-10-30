@@ -276,6 +276,12 @@ void platform_input_scheme_used(void *gamepad)
 	last_input_seen = TRUE;
 }
 
+void platform_input_touch_used(void)
+{
+	last_input_scheme = last_pad_scheme;
+	last_input_seen = TRUE;
+}
+
 /* collects the motion the game has not asked for yet; motion that nobody
 consumes for a few polls (menus, cutscenes) is dropped so it cannot jerk
 the view later */

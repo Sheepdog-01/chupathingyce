@@ -70,6 +70,9 @@ a gamepad (an SDL_Gamepad), or NULL for the keyboard and mouse. The
 launcher's own input (launcher.c), which the controller emulation never
 sees */
 void platform_input_scheme_used(void *gamepad);
+/* the touchscreen used (desktop builds): the prompts show the controller's
+buttons, as the menus' key and the touch controls do on Android */
+void platform_input_touch_used(void);
 
 /* whether the game runs without anyone to answer a question (a test run, a
 null renderer, the Steam Deck's Game Mode): no launcher, no message boxes */
@@ -109,6 +112,9 @@ that fit the desktop, and display.window_size's; how many. None on
 Android. */
 int platform_window_sizes(long *widths, long *heights, int maximum);
 void platform_video_drawable_size(int *width, int *height);
+/* the window's pixels to its content at 96 to the inch: 2 for a display set
+to 200% (desktop builds; 0 before the window) */
+float platform_video_display_scale(void);
 /* the window's mode and size and V-Sync, from config.toml as Settings has
 just written it (the main thread's) */
 void platform_display_apply(void);
@@ -119,8 +125,8 @@ int halo_interpolation_enabled(void);
 void platform_mouse_capture(BOOL capture);
 
 /* handles the window's and input devices' events; main thread only, a no-op
-elsewhere; on Android this is where finger events reach touch_input.c, which
-is why that module's state is only touched from the main thread */
+elsewhere; this is where finger events reach touch_input.c, which is why
+that module's state is only touched from the main thread */
 void platform_pump_events(void);
 void platform_show_message(const char *title, const char *message);
 /* a snapshot of the input state; consume_motion resets the mouse deltas */
@@ -128,8 +134,8 @@ void platform_input_read(struct platform_input_state *state, BOOL consume_motion
 /* the pointer in the menus (d3d8_gl.c, halo_ui_pointer_update) */
 struct platform_ui_pointer
 {
-	/* in window coordinates, as SDL reports them (on Android the window's
-	pixels: touch_input.c) */
+	/* in window coordinates, as SDL reports them (the touchscreen's too:
+	touch_input.c) */
 	float x, y;
 	float click_x, click_y;
 	BOOL moved;
@@ -143,8 +149,8 @@ struct platform_ui_pointer
 	BOOL touch;
 };
 /* says whether a menu is up; the mouse is released for the menus (desktop),
-or the touchscreen goes to them (Android); a change of mode drops the gesture
-in progress */
+and the touchscreen goes to them; a change of mode drops the gesture in
+progress */
 void platform_ui_pointer_set_active(BOOL active);
 
 /* pointer receives what the pointer did since the last call; returns

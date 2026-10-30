@@ -1,12 +1,15 @@
 /*
 TOUCH_INPUT.C
 
-The touchscreen of the Android build. SDL's finger events become the
-menus' pointer (touch_menu.c) while a menu is up, as the desktop mouse
-does (sdl_platform.c, platform_ui_pointer_read). Sizes are in dp, from the
-display density the app passes (HALO_DISPLAY_DENSITY, host_main.c). The edges
-of the screen where Android keeps its gestures are asked of the host at every
-finger down (host_gesture_insets).
+The touchscreen. SDL's finger events become the menus' pointer
+(touch_menu.c) while a menu is up, as the desktop mouse does
+(sdl_platform.c, platform_ui_pointer_read). The gestures are worked out in
+the drawable's pixels and handed to the menus in the window's units, which
+differ on a computer whose display scales. Sizes are in dp (a 160th of an
+inch): on Android from the display density the app passes
+(HALO_DISPLAY_DENSITY, host_main.c), on a computer from the window's
+display scale. The edges of the screen where Android keeps its gestures are
+asked of the host at every finger down (host_gesture_insets).
 */
 
 #include "touch_input.h"
@@ -46,7 +49,7 @@ static int skip_polls;
 #define TOUCH_PRESS_POLLS 2
 
 /* returns pixels per dp; 0 only while neither the density
-(HALO_DISPLAY_DENSITY) nor the window's size is known */
+(HALO_DISPLAY_DENSITY), the display scale nor the window's size is known */
 static float pixels_per_dp(void)
 {
 	const char *density = getenv("HALO_DISPLAY_DENSITY");
@@ -54,6 +57,11 @@ static float pixels_per_dp(void)
 
 	if (density && atof(density) > 0.0)
 		return (float)atof(density);
+#ifndef HALO_ANDROID
+	/* a display scale of 1 is 96 pixels to the inch, and a dp a 160th */
+	if (platform_video_display_scale() > 0.0f)
+		return platform_video_display_scale() * 96.0f / 160.0f;
+#endif
 	platform_video_drawable_size(&width, &height);
 	/* a phone held in landscape is about 360 dp high, whatever its density */
 	return height > 0 ? (float)height / 360.0f : 0.0f;
@@ -145,20 +153,30 @@ void touch_input_menu_set_active(int active)
 void touch_input_menu_read(struct platform_ui_pointer *pointer)
 {
 	struct touch_menu_output output;
+	int pixels_width = 0, pixels_height = 0, window_width = 0, window_height = 0;
+	float scale_x = 1.0f, scale_y = 1.0f;
 
 	menu_setup();
 	touch_menu_read(&menu, &output);
-	pointer->x = output.x;
-	pointer->y = output.y;
-	pointer->click_x = output.click_x;
-	pointer->click_y = output.click_y;
+	/* the drawable's pixels to the window's units (the same on Android) */
+	platform_video_drawable_size(&pixels_width, &pixels_height);
+	platform_video_window_size(&window_width, &window_height);
+	if (pixels_width > 0 && pixels_height > 0 && window_width > 0 && window_height > 0)
+	{
+		scale_x = (float)window_width / (float)pixels_width;
+		scale_y = (float)window_height / (float)pixels_height;
+	}
+	pointer->x = output.x * scale_x;
+	pointer->y = output.y * scale_y;
+	pointer->click_x = output.click_x * scale_x;
+	pointer->click_y = output.click_y * scale_y;
 	pointer->moved = output.moved ? TRUE : FALSE;
 	pointer->left_clicks = output.clicks;
 	pointer->right_clicks = 0;
 	pointer->wheel_steps = output.wheel_steps;
 	pointer->downs = output.downs;
-	pointer->down_x = output.down_x;
-	pointer->down_y = output.down_y;
+	pointer->down_x = output.down_x * scale_x;
+	pointer->down_y = output.down_y * scale_y;
 	pointer->touch = TRUE;
 }
 
