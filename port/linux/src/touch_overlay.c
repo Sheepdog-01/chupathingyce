@@ -59,6 +59,8 @@ long halo_screen_width(void);
 BOOL halo_ui_point_to_window(short x, short y, float *window_x, float *window_y);
 /* (xinput_sdl.c) */
 BOOL platform_input_touch_last(void);
+/* (sdl_platform.c) */
+SDL_Window *platform_sdl_window(void);
 
 /* touch_input.c's _touch_scene_* bits */
 enum
@@ -190,6 +192,9 @@ static struct
 	SDL_FingerID tool_finger;
 	/* what is drawn next is this solid (the editor's hidden controls) */
 	float fade;
+	/* the Hide button's: the controls put away, until Touch is pressed
+	(TouchControls.java's visible, for this run) */
+	BOOL hidden;
 } overlay = { .layout_read_at = (unsigned long)-1, .fade = 1.0f };
 
 static void release_all(void);
@@ -200,6 +205,17 @@ static void release_all(void);
 on a 3:2 tablet (a Surface Pro), whose picture is taller than a phone's;
 empty, Android's */
 static const char DESKTOP_LAYOUT[] = "";
+
+/* whether a layout's control is one Android's would take (TouchLayout.java):
+the eighteen in their order, then copies of any but the stick, each on the
+grid and between half and twice its size */
+static BOOL control_valid(const struct control *control, int index)
+{
+	return control->kind >= 0 && control->kind < NUMBER_OF_KINDS &&
+		(index < NUMBER_OF_KINDS ? control->kind == index : control->kind != _kind_stick) &&
+		control->x >= 0.0f && control->x <= GRID_WIDTH && control->y >= 0.0f && control->y <= GRID_HEIGHT &&
+		control->size >= 0.5f && control->size <= 2.0f;
+}
 
 /* a layout as input.touch_layout has it ("kind,x,y,size,shown" for each
 control, between semicolons, x and y on the 960x540 grid) into controls;
@@ -214,18 +230,20 @@ static int layout_parse(const char *text, struct control *controls)
 		int kind, shown, used = 0;
 
 		if (sscanf(text, " %d , %f , %f , %f , %d %n", &kind, &control->x, &control->y, &control->size, &shown,
-			&used) != 5 || kind < 0 || kind >= NUMBER_OF_KINDS || control->size < 0.5f || control->size > 2.0f)
+			&used) != 5)
 		{
 			return 0;
 		}
 		control->kind = kind;
+		if (!control_valid(control, count))
+			return 0;
 		control->shown = shown != 0;
 		count++;
 		text += used;
 		if (*text == ';')
 			text++;
 	}
-	return *text ? 0 : count;
+	return *text || count < NUMBER_OF_KINDS ? 0 : count;
 }
 
 /* the usual layout into controls; how many */
@@ -474,13 +492,38 @@ static struct finger *finger_find(SDL_FingerID id)
 	return NULL;
 }
 
+/* the Hide (or Touch) button: at the top, in the middle, as Android's is,
+by its size alone */
+#define TOGGLE_Y 38.0f
+#define TOGGLE_RADIUS 28.0f
+
+static void toggle_place(const struct view *view, float *x, float *y, float *radius)
+{
+	*x = view->left + view->width * 0.5f;
+	*y = TOGGLE_Y * LAYOUT_LINES / GRID_HEIGHT;
+	*radius = TOGGLE_RADIUS * view->scale;
+}
+
 static void finger_down(const struct view *view, SDL_FingerID id, float x, float y)
 {
 	struct finger *finger;
-	int control = control_at(view, x, y);
+	float toggle_x, toggle_y, toggle_radius;
+	int control;
 
 	if (overlay.finger_count == MAXIMUM_FINGERS || finger_find(id))
 		return;
+	/* (Hide puts the controls away, Touch brings them back; while they are
+	away no finger plays) */
+	toggle_place(view, &toggle_x, &toggle_y, &toggle_radius);
+	if (inside(x, y, toggle_x, toggle_y, toggle_radius))
+	{
+		overlay.hidden = !overlay.hidden;
+		release_all();
+		return;
+	}
+	if (overlay.hidden)
+		return;
+	control = control_at(view, x, y);
 	/* (away from the controls, one finger turns the view; another does
 	nothing) */
 	if (control == NO_CONTROL && looking())
@@ -563,6 +606,7 @@ enum
 	_tool_smaller,
 	_tool_bigger,
 	_tool_hide,
+	_tool_copy,
 	_tool_reset,
 	_tool_cancel,
 	_tool_save,
@@ -573,9 +617,9 @@ enum
 #define NO_TOOL (-1)
 /* the panel, in the middle of the 640 columns, between the controls'
 usual places; its buttons along its bottom */
-#define PANEL_X 150.0f
+#define PANEL_X 116.0f
 #define PANEL_Y 150.0f
-#define PANEL_WIDTH 340.0f
+#define PANEL_WIDTH 408.0f
 #define PANEL_HEIGHT 100.0f
 #define TOOL_WIDTH 52.0f
 #define TOOL_HEIGHT 24.0f
@@ -628,32 +672,44 @@ static void grid_place(const struct view *view, float x, float y, float *grid_x,
 	*grid_y = y * GRID_HEIGHT / LAYOUT_LINES;
 }
 
-/* the edited layout as input.touch_layout has it; empty if it is the usual
-one */
-static void edit_save(void)
+/* a layout as input.touch_layout has it into text (MAXIMUM_CONTROLS * 40
+long), empty if it is the usual one; whether it is not */
+#define LAYOUT_TEXT_SIZE (MAXIMUM_CONTROLS * 40)
+
+static BOOL layout_text(const struct control *controls, int count, char *text)
 {
-	char text[MAXIMUM_CONTROLS * 40];
 	struct control usual[MAXIMUM_CONTROLS];
 	int usual_count = layout_defaults_into(usual);
 	size_t used = 0;
-	BOOL changed = overlay.edit_count != usual_count;
+	BOOL changed = count != usual_count;
 	int index;
 
 	text[0] = 0;
-	for (index = 0; index < overlay.edit_count; index++)
+	for (index = 0; index < count; index++)
 	{
-		const struct control *control = &overlay.edit[index];
-		int written = snprintf(text + used, sizeof(text) - used, "%d,%.1f,%.1f,%.2f,%d;", control->kind,
+		const struct control *control = &controls[index];
+		int written = snprintf(text + used, LAYOUT_TEXT_SIZE - used, "%d,%.1f,%.1f,%.2f,%d;", control->kind,
 			control->x, control->y, control->size, control->shown ? 1 : 0);
 
-		if (written < 0 || (size_t)written >= sizeof(text) - used)
+		if (written < 0 || (size_t)written >= LAYOUT_TEXT_SIZE - used)
 			break;
 		used += (size_t)written;
 		changed |= index >= usual_count || control->kind != usual[index].kind ||
 			fabsf(control->x - usual[index].x) > 0.05f || fabsf(control->y - usual[index].y) > 0.05f ||
 			fabsf(control->size - usual[index].size) > 0.001f || control->shown != usual[index].shown;
 	}
-	if (!config_write("input.touch_layout", changed ? text : ""))
+	if (!changed)
+		text[0] = 0;
+	return changed;
+}
+
+/* the edited layout into input.touch_layout */
+static void edit_save(void)
+{
+	char text[LAYOUT_TEXT_SIZE];
+
+	layout_text(overlay.edit, overlay.edit_count, text);
+	if (!config_write("input.touch_layout", text))
 		platform_log("touch: could not save input.touch_layout");
 }
 
@@ -675,6 +731,23 @@ static void edit_tool(int tool)
 	case _tool_hide:
 		if (chosen)
 			chosen->shown = !chosen->shown;
+		break;
+	case _tool_copy:
+		/* (as TouchLayout.java's duplicate: beside it, on its right if
+		there is room; never the stick) */
+		if (chosen && chosen->kind != _kind_stick && overlay.edit_count < MAXIMUM_CONTROLS)
+		{
+			struct control *copy = &overlay.edit[overlay.edit_count];
+			float radius = kinds[chosen->kind].radius * chosen->size;
+
+			*copy = *chosen;
+			copy->shown = TRUE;
+			copy->x = chosen->x + radius * 2.0f + 12.0f;
+			if (copy->x > GRID_WIDTH - radius)
+				copy->x = chosen->x - radius * 2.0f - 12.0f;
+			copy->x = fminf(GRID_WIDTH, fmaxf(0.0f, copy->x));
+			overlay.chosen = overlay.edit_count++;
+		}
 		break;
 	case _tool_reset:
 		overlay.edit_count = layout_defaults_into(overlay.edit);
@@ -856,6 +929,404 @@ void touch_overlay_cancel(void)
 	release_all();
 }
 
+/* ---------- aiming with the gyroscope (GyroscopeAim.java)
+
+input.touch_gyro turns the view as the device turns, while the controls
+show: the gyroscope's rates, turned into the screen's axes by how the
+display is rotated from its natural way, are integrated over each sample's
+time (the mean of two samples) into radians, 0.0022 to the look's pixel as
+the swipe and the mouse have, times input.touch_gyro_sensitivity. The
+sensor is open only while it is used. */
+
+#define LOOK_RADIANS_PER_PIXEL 0.0022f
+/* (rates below this are the sensor's noise at rest, which would drift the
+view) */
+#define GYRO_NOISE 0.01f
+#define GYRO_LONGEST_SAMPLE_NS 100000000ULL
+
+static struct
+{
+	SDL_Sensor *sensor;
+	BOOL tried, subsystem;
+	Uint64 previous_time;
+	int previous_rotation;
+	float previous_x, previous_y;
+} gyro = { .previous_rotation = -1 };
+
+/* quarter turns counterclockwise the display is from its natural way (0 to
+3, as Android's Surface.ROTATION_*): portrait, landscape (its right side
+up), portrait upside down and landscape flipped are a quarter turn apart */
+static int display_rotation(void)
+{
+	SDL_Window *window = platform_sdl_window();
+	SDL_DisplayID display = window ? SDL_GetDisplayForWindow(window) : 0;
+	SDL_DisplayOrientation current, natural;
+	int turns[5] = { -1, 1, 3, 0, 2 };
+
+	if (!display)
+		return 0;
+	current = SDL_GetCurrentDisplayOrientation(display);
+	natural = SDL_GetNaturalDisplayOrientation(display);
+	if (current == SDL_ORIENTATION_UNKNOWN || natural == SDL_ORIENTATION_UNKNOWN)
+		return 0;
+	return (turns[current] - turns[natural] + 4) % 4;
+}
+
+static void gyro_reset(void)
+{
+	gyro.previous_time = 0;
+	gyro.previous_rotation = -1;
+}
+
+/* opens the gyroscope when it is wanted (once a time, and only if there is
+one), closes it when not */
+static void gyro_update(void)
+{
+	BOOL wanted = overlay.shown && !overlay.hidden && !overlay.editing && config_boolean("input.touch_gyro");
+
+	if (!wanted)
+	{
+		if (gyro.sensor)
+		{
+			SDL_CloseSensor(gyro.sensor);
+			gyro.sensor = NULL;
+		}
+		gyro.tried = FALSE;
+		gyro_reset();
+		return;
+	}
+	if (gyro.sensor || gyro.tried)
+		return;
+	gyro.tried = TRUE;
+	if (!gyro.subsystem)
+		gyro.subsystem = SDL_InitSubSystem(SDL_INIT_SENSOR);
+	if (gyro.subsystem)
+	{
+		int count = 0, index;
+		SDL_SensorID *sensors = SDL_GetSensors(&count);
+
+		for (index = 0; sensors && index < count && !gyro.sensor; index++)
+		{
+			if (SDL_GetSensorTypeForID(sensors[index]) == SDL_SENSOR_GYRO)
+				gyro.sensor = SDL_OpenSensor(sensors[index]);
+		}
+		SDL_free(sensors);
+	}
+	platform_log(gyro.sensor ? "touch: gyroscope aim on (%s)" : "touch: gyroscope aim, but no gyroscope%s",
+		gyro.sensor ? SDL_GetSensorName(gyro.sensor) : "");
+}
+
+void touch_overlay_sensor(const SDL_SensorEvent *event)
+{
+	float rates[2], right, up, screen_x, screen_y, seconds;
+	int rotation;
+	BOOL valid;
+
+	if (!gyro.sensor || event->which != SDL_GetSensorID(gyro.sensor))
+		return;
+	if (!overlay.shown || overlay.hidden || overlay.editing)
+	{
+		gyro_reset();
+		return;
+	}
+	rotation = display_rotation();
+	/* (the rates about the screen's right and up, from the device's x and
+	y: SDL's axes are Android's, right and up with the device held its
+	natural way) */
+	rates[0] = event->data[0];
+	rates[1] = event->data[1];
+	switch (rotation)
+	{
+	default:
+		right = rates[0];
+		up = rates[1];
+		break;
+	case 1:
+		right = -rates[1];
+		up = rates[0];
+		break;
+	case 2:
+		right = -rates[0];
+		up = -rates[1];
+		break;
+	case 3:
+		right = rates[1];
+		up = -rates[0];
+		break;
+	}
+	/* (in GyroscopeAim.java's terms; its table, kept for landscape, the 1
+	and 3 a phone has, inverts 0 and 2, which a tablet's natural landscape
+	gives) */
+	screen_x = -right;
+	screen_y = -up;
+	if (fabsf(screen_x) < GYRO_NOISE)
+		screen_x = 0.0f;
+	if (fabsf(screen_y) < GYRO_NOISE)
+		screen_y = 0.0f;
+	seconds = (float)(event->sensor_timestamp - gyro.previous_time) * 1e-9f;
+	valid = gyro.previous_time && rotation == gyro.previous_rotation && event->sensor_timestamp > gyro.previous_time &&
+		event->sensor_timestamp - gyro.previous_time <= GYRO_LONGEST_SAMPLE_NS;
+	if (valid)
+	{
+		float sensitivity = setting_real("input.touch_gyro_sensitivity", 0.25f, 4.0f, 1.0f);
+
+		/* (GyroscopeAim.java's delta, and TouchControls.java's look from it) */
+		overlay.look[0] += (screen_y + gyro.previous_y) * 0.5f * seconds / LOOK_RADIANS_PER_PIXEL * sensitivity;
+		overlay.look[1] += (screen_x + gyro.previous_x) * 0.5f * seconds / LOOK_RADIANS_PER_PIXEL * sensitivity;
+	}
+	gyro.previous_time = event->sensor_timestamp;
+	gyro.previous_rotation = rotation;
+	gyro.previous_x = screen_x;
+	gyro.previous_y = screen_y;
+}
+
+/* ---------- a layout's file
+
+Android's layout file (TouchLayout.java's exportConfiguration: a Java
+properties file, "halo-touch-layout" version 2), so that a layout goes from
+the phone to the computer and back: the controls on the same grid, the
+look's sensitivity (by its length on a phone's screen, as the desktop's
+is), and gyroscope aim. Controls Setup's EXPORT LAYOUT and IMPORT LAYOUT
+pick the file with the system's own dialog; where none can be shown (the
+Steam Deck's Game Mode: platform_run_is_quiet) it is touch_layout.txt
+beside config.toml. */
+
+#define LAYOUT_FILE_NAME "touch_layout.txt"
+#define LAYOUT_FILE_LIMIT 65536
+#define MESSAGE_MS 4000
+
+enum
+{
+	_file_idle,
+	_file_asking,
+	_file_chosen,
+	_file_cancelled,
+};
+
+static struct
+{
+	SDL_AtomicInt state;
+	BOOL exporting;
+	char path[1024];
+	/* a line saying what came of it, drawn for a while */
+	char message[96];
+	Uint64 message_until;
+} layout_file;
+
+static void file_message(const char *message)
+{
+	snprintf(layout_file.message, sizeof(layout_file.message), "%s", message);
+	layout_file.message_until = SDL_GetTicks() + MESSAGE_MS;
+	platform_log("touch: %s", message);
+}
+
+static void layout_export(const char *path)
+{
+	char text[MAXIMUM_CONTROLS * 220];
+	size_t used;
+	int index;
+
+	layout_read();
+	used = (size_t)snprintf(text, sizeof(text),
+		"#Halo touch layout\nformat=halo-touch-layout\nversion=2\nrumble=true\ngyroscope=%s\ncount=%d\n"
+		"sensitivity=%g\n", config_boolean("input.touch_gyro") ? "true" : "false", overlay.count,
+		setting_real("input.touch_sensitivity", 0.25f, 8.0f, 2.0f) > 4.0f ? 4.0 :
+		(double)setting_real("input.touch_sensitivity", 0.25f, 8.0f, 2.0f));
+	for (index = 0; index < overlay.count && used < sizeof(text); index++)
+	{
+		const struct control *control = &overlay.controls[index];
+
+		used += (size_t)snprintf(text + used, sizeof(text) - used,
+			"control.%d.type=%d\ncontrol.%d.x=%.1f\ncontrol.%d.y=%.1f\ncontrol.%d.visible=%s\ncontrol.%d.size=%.2f\n",
+			index, control->kind, index, control->x, index, control->y, index, control->shown ? "true" : "false",
+			index, control->size);
+	}
+	file_message(used < sizeof(text) && SDL_SaveFile(path, text, used) ? "Touch layout exported." :
+		"The touch layout could not be exported.");
+}
+
+/* a property's value in a properties file's text, or NULL; at most size */
+static const char *property(const char *text, const char *key, char *value, size_t size)
+{
+	size_t length = strlen(key);
+	const char *line;
+
+	for (line = text; *line; line += strcspn(line, "\n"), line += *line == '\n')
+	{
+		const char *at = line + strspn(line, " \t");
+		size_t end;
+
+		if (*at == '#' || *at == '!' || strncmp(at, key, length))
+			continue;
+		at += length;
+		at += strspn(at, " \t");
+		if (*at != '=' && *at != ':')
+			continue;
+		at++;
+		at += strspn(at, " \t");
+		end = strcspn(at, "\r\n");
+		while (end && (at[end - 1] == ' ' || at[end - 1] == '\t'))
+			end--;
+		if (end >= size)
+			return NULL;
+		memcpy(value, at, end);
+		value[end] = 0;
+		return value;
+	}
+	return NULL;
+}
+
+static BOOL property_number(const char *text, const char *key, float *number)
+{
+	char value[64], *end;
+
+	if (!property(text, key, value, sizeof(value)))
+		return FALSE;
+	*number = strtof(value, &end);
+	return end != value && !*end && isfinite(*number);
+}
+
+/* "true" or "false" */
+static BOOL property_boolean(const char *text, const char *key, BOOL *flag)
+{
+	char value[8];
+
+	if (!property(text, key, value, sizeof(value)) || (strcmp(value, "true") && strcmp(value, "false")))
+		return FALSE;
+	*flag = !strcmp(value, "true");
+	return TRUE;
+}
+
+/* as TouchLayout.java's importConfiguration takes one: versions 1 and 2,
+18 to 64 controls, every one valid; then into config.toml */
+static void layout_import(const char *path)
+{
+	struct control controls[MAXIMUM_CONTROLS];
+	char layout[LAYOUT_TEXT_SIZE], value[32], number[32];
+	size_t size = 0;
+	char *text = SDL_LoadFile(path, &size);
+	float count = 0.0f, sensitivity = 0.0f;
+	BOOL gyroscope = FALSE, rumble, valid, version_2 = FALSE;
+	int index;
+
+	valid = text && size <= LAYOUT_FILE_LIMIT && property(text, "format", value, sizeof(value)) &&
+		!strcmp(value, "halo-touch-layout") && property(text, "version", value, sizeof(value)) &&
+		(!strcmp(value, "1") || !strcmp(value, "2")) && property_number(text, "count", &count) &&
+		count >= NUMBER_OF_KINDS && count <= MAXIMUM_CONTROLS && count == floorf(count) &&
+		property_number(text, "sensitivity", &sensitivity) && sensitivity >= 0.25f && sensitivity <= 4.0f;
+	if (valid && !strcmp(value, "2"))
+	{
+		version_2 = TRUE;
+		valid = property_boolean(text, "rumble", &rumble) && property_boolean(text, "gyroscope", &gyroscope);
+	}
+	for (index = 0; valid && index < (int)count; index++)
+	{
+		struct control *control = &controls[index];
+		float kind = -1.0f;
+		BOOL shown = TRUE;
+		char key[40];
+
+		snprintf(key, sizeof(key), "control.%d.type", index);
+		valid = property_number(text, key, &kind) && kind == floorf(kind);
+		control->kind = (int)kind;
+		snprintf(key, sizeof(key), "control.%d.x", index);
+		valid = valid && property_number(text, key, &control->x);
+		snprintf(key, sizeof(key), "control.%d.y", index);
+		valid = valid && property_number(text, key, &control->y);
+		snprintf(key, sizeof(key), "control.%d.visible", index);
+		valid = valid && property_boolean(text, key, &shown);
+		control->shown = shown;
+		control->size = 1.0f;
+		snprintf(key, sizeof(key), "control.%d.size", index);
+		valid = valid && (!version_2 || property_number(text, key, &control->size)) && control_valid(control, index);
+	}
+	SDL_free(text);
+	if (!valid)
+	{
+		file_message("That file is not a touch layout.");
+		return;
+	}
+	layout_text(controls, (int)count, layout);
+	snprintf(number, sizeof(number), "%g", sensitivity);
+	if (config_write("input.touch_layout", layout) && config_write("input.touch_sensitivity", number) &&
+		(!version_2 || config_write_boolean("input.touch_gyro", gyroscope)))
+	{
+		file_message("Touch layout imported.");
+	}
+	else
+	{
+		file_message("The touch layout could not be saved.");
+	}
+}
+
+/* (the system's dialog answers on a thread of its own on some systems) */
+static void SDLCALL file_chosen(void *userdata, const char *const *files, int filter)
+{
+	(void)userdata;
+	(void)filter;
+	if (files && files[0])
+	{
+		snprintf(layout_file.path, sizeof(layout_file.path), "%s", files[0]);
+		SDL_SetAtomicInt(&layout_file.state, _file_chosen);
+	}
+	else
+	{
+		SDL_SetAtomicInt(&layout_file.state, _file_cancelled);
+	}
+}
+
+static void file_begin(BOOL exporting)
+{
+	static const SDL_DialogFileFilter filters[] =
+	{
+		{ "Touch layouts", "txt" },
+		{ "All files", "*" },
+	};
+	char folder[1024];
+
+	if (SDL_GetAtomicInt(&layout_file.state) != _file_idle)
+		return;
+	layout_file.exporting = exporting;
+	config_folder(folder, sizeof(folder));
+	snprintf(layout_file.path, sizeof(layout_file.path), "%s%s", folder, LAYOUT_FILE_NAME);
+	if (platform_run_is_quiet())
+	{
+		SDL_SetAtomicInt(&layout_file.state, _file_chosen);
+		return;
+	}
+	SDL_SetAtomicInt(&layout_file.state, _file_asking);
+	if (exporting)
+		SDL_ShowSaveFileDialog(file_chosen, NULL, platform_sdl_window(), filters, 2, layout_file.path);
+	else
+		SDL_ShowOpenFileDialog(file_chosen, NULL, platform_sdl_window(), filters, 2, folder, false);
+}
+
+/* (on the game's thread, at every read of the controller) */
+static void file_update(void)
+{
+	int state = SDL_GetAtomicInt(&layout_file.state);
+
+	if (state == _file_chosen)
+	{
+		if (layout_file.exporting)
+			layout_export(layout_file.path);
+		else
+			layout_import(layout_file.path);
+	}
+	if (state == _file_chosen || state == _file_cancelled)
+		SDL_SetAtomicInt(&layout_file.state, _file_idle);
+}
+
+void touch_overlay_layout_export(void)
+{
+	file_begin(TRUE);
+}
+
+void touch_overlay_layout_import(void)
+{
+	file_begin(FALSE);
+}
+
 void touch_overlay_scene(int scene)
 {
 	BOOL shown;
@@ -867,6 +1338,8 @@ void touch_overlay_scene(int scene)
 	if (overlay.shown && !shown)
 		release_all();
 	overlay.shown = shown;
+	gyro_update();
+	file_update();
 }
 
 void touch_overlay_read(int *state)
@@ -943,26 +1416,32 @@ static void draw_stick(float x, float y, float radius)
 	ring(island_x, island_y, island, island * 0.06f, faded(0xFFFFFF60, 1.0f));
 }
 
-/* a button: a circle and its label (Android's), shrunk until it fits */
-static void draw_button(int kind, float x, float y, float radius, BOOL held)
+/* a circle and its label, shrunk until it fits */
+static void draw_labelled(float x, float y, float radius, const char *label, BOOL held)
 {
 	unsigned int fill_top = held ? 0xFFFFFF60 : 0x30343880, fill_bottom = held ? 0xC8CCD060 : 0x0C0E1080;
 	float size = radius * 0.42f;
-	float width = ui_overlay_text_width(UI_FONT_BOLD, size, kinds[kind].label);
+	float width = ui_overlay_text_width(UI_FONT_BOLD, size, label);
 
 	circle_gradient(x, y, radius, faded(fill_top, 1.0f), faded(fill_bottom, 1.0f));
 	ring(x, y, radius, radius * 0.06f, faded(held ? 0xFFFFFFF0 : 0xFFFFFFA0, 1.0f));
 	if (width > radius * 1.7f)
 		size *= radius * 1.7f / width;
-	ui_overlay_text(UI_FONT_BOLD, size, x, y - size * 0.5f, UI_ALIGN_CENTER, faded(0xFFFFFFFF, 1.0f / 0.6f),
-		kinds[kind].label);
+	ui_overlay_text(UI_FONT_BOLD, size, x, y - size * 0.5f, UI_ALIGN_CENTER, faded(0xFFFFFFFF, 1.0f / 0.6f), label);
+}
+
+/* a button: its circle and its label (Android's) */
+static void draw_button(int kind, float x, float y, float radius, BOOL held)
+{
+	draw_labelled(x, y, radius, kinds[kind].label, held);
 }
 
 /* the editor: the screen dimmed, the panel, and every control, the hidden
 ones faint and the chosen one ringed */
 static void edit_render(const struct view *view)
 {
-	static const char *const labels[NUMBER_OF_TOOLS] = { "SMALLER", "BIGGER", "HIDE", "RESET", "CANCEL", "SAVE" };
+	static const char *const labels[NUMBER_OF_TOOLS] =
+		{ "SMALLER", "BIGGER", "HIDE", "COPY", "RESET", "CANCEL", "SAVE" };
 	int index;
 
 	ui_overlay_layer(2);
@@ -971,14 +1450,16 @@ static void edit_render(const struct view *view)
 	ui_overlay_text(UI_FONT_MENU, 16.0f, PANEL_X + PANEL_WIDTH * 0.5f, PANEL_Y + 10.0f, UI_ALIGN_CENTER, 0xFFFFFFFF,
 		"TOUCH CONTROLS LAYOUT");
 	ui_overlay_text(UI_FONT_REGULAR, 11.0f, PANEL_X + PANEL_WIDTH * 0.5f, PANEL_Y + 34.0f, UI_ALIGN_CENTER,
-		0xC8D8F0FF, "Drag a control to move it. Tap one to size or hide it.");
+		0xC8D8F0FF, "Drag a control to move it. Tap one to size, hide or copy it.");
 	ui_overlay_text(UI_FONT_REGULAR, 9.0f, PANEL_X + PANEL_WIDTH * 0.5f, PANEL_Y + 50.0f, UI_ALIGN_CENTER,
 		0x9FB4D0FF, "The mouse works too. Escape, or B on a controller, cancels.");
 	for (index = 0; index < NUMBER_OF_TOOLS; index++)
 	{
 		float x, y;
-		/* (the chosen control's buttons do nothing with none chosen) */
-		BOOL usable = index > _tool_hide || overlay.chosen != NO_CONTROL;
+		/* (the chosen control's buttons do nothing with none chosen, and the
+		stick has no copy) */
+		BOOL usable = index > _tool_copy || (overlay.chosen != NO_CONTROL &&
+			(index != _tool_copy || overlay.edit[overlay.chosen].kind != _kind_stick));
 		const char *label = labels[index];
 
 		if (index == _tool_hide && overlay.chosen != NO_CONTROL && !overlay.edit[overlay.chosen].shown)
@@ -1008,11 +1489,27 @@ static void edit_render(const struct view *view)
 	ui_overlay_layer(0);
 }
 
+/* the layout file's line, over whatever is up */
+static void message_render(void)
+{
+	float width;
+
+	if (!layout_file.message[0] || SDL_GetTicks() >= layout_file.message_until)
+		return;
+	width = ui_overlay_text_width(UI_FONT_BOLD, 12.0f, layout_file.message) + 24.0f;
+	ui_overlay_layer(3);
+	ui_overlay_rect(320.0f - width * 0.5f, 372.0f, width, 24.0f, 6.0f, 0x0A1A30E8);
+	ui_overlay_outline(320.0f - width * 0.5f, 372.0f, width, 24.0f, 6.0f, 1.0f, 0x4F9DFFFF);
+	ui_overlay_text(UI_FONT_BOLD, 12.0f, 320.0f, 378.0f, UI_ALIGN_CENTER, 0xFFFFFFFF, layout_file.message);
+	ui_overlay_layer(0);
+}
+
 void touch_overlay_render(void)
 {
 	struct view view;
 	int index;
 
+	message_render();
 	if (overlay.editing && view_get(&view))
 	{
 		edit_render(&view);
@@ -1022,6 +1519,14 @@ void touch_overlay_render(void)
 		return;
 	layout_read();
 	ui_overlay_layer(0);
+	{
+		float x, y, radius;
+
+		toggle_place(&view, &x, &y, &radius);
+		draw_labelled(x, y, radius, overlay.hidden ? "Touch" : "Hide", FALSE);
+	}
+	if (overlay.hidden)
+		return;
 	for (index = 0; index < overlay.count; index++)
 	{
 		const struct control *control = &overlay.controls[index];
@@ -1106,6 +1611,19 @@ void touch_overlay_edit_mouse(unsigned int type, float window_x, float window_y)
 int touch_overlay_touched_last(void)
 {
 	return 0;
+}
+
+void touch_overlay_sensor(const SDL_SensorEvent *event)
+{
+	(void)event;
+}
+
+void touch_overlay_layout_export(void)
+{
+}
+
+void touch_overlay_layout_import(void)
+{
 }
 
 #endif

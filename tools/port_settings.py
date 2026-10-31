@@ -568,6 +568,18 @@ TOUCH_ROWS = [
     ("LOOK SENSITIVITY:", "input.touch_sensitivity",
      [(f"{value:g}", f"{value:g}") for value in (0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6, 8)],
      "How far a swipe turns the view.", "desktop"),
+    ("GYRO AIM:", "input.touch_gyro", ON_OFF[::-1],
+     "Aim by turning the tablet, if it has a gyroscope.", "desktop"),
+    ("GYRO SENSITIVITY:", "input.touch_gyro_sensitivity",
+     [(f"{value:g}", f"{value:g}") for value in (0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4)],
+     "How far the view turns as the tablet turns.", "desktop"),
+]
+# the rows after them that run a function (on a computer): its name, label,
+# and help (menu_functions.c's)
+TOUCH_ACTIONS = [
+    ("layout", "EDIT LAYOUT", "port touch layout edit"),
+    ("export", "EXPORT LAYOUT", "port touch layout export"),
+    ("import", "IMPORT LAYOUT", "port touch layout import"),
 ]
 CONTROLS_SPEC = {"screen": "controls_settings_screen", "spacing": 24, "help_top": 368, "help_text": True,
                  "header": ("header_profile_controls_settings",
@@ -684,17 +696,17 @@ def _controls_rows() -> tuple:
     # the touchscreen's
     mark("touch")
     settings(TOUCH_ROWS, 1)
-    rows.append((f"{base}/op_touch_layout", "desktop", len(TOUCH_ROWS) + 1))
-    extra += _widget(f"{base}/op_touch_layout",
-                     [("width", 512), ("height", 28), ("flags", "pass_unhandled_to_focused_child"),
-                      ("bitmap", "bitmaps/option_bkds"), ("color", "#FF2896FF")],
-                     ['<on event="a" run="port touch layout edit"/>',
-                      '<on event="start" run="port touch layout edit"/>',
-                      '<on event="left_mouse" run="mouse emit accept event"/>',
-                      f'<child{attributes([("widget", f"{base}/touch_layout_label")])}/>'])
-    extra += _widget(f"{base}/touch_layout_label",
-                     [("type", "text"), ("controller", 1), ("width", 300), ("height", 22), ("text", "EDIT LAYOUT"),
-                      ("font", "ui\\large_ui"), ("color", "#FF2896FF"), ("text_x", 13), ("text_y", 4)], [])
+    for place, (key, label, function) in enumerate(TOUCH_ACTIONS, len(TOUCH_ROWS) + 1):
+        rows.append((f"{base}/op_touch_{key}", "desktop", place))
+        extra += _widget(f"{base}/op_touch_{key}",
+                         [("width", 512), ("height", 28), ("flags", "pass_unhandled_to_focused_child"),
+                          ("bitmap", "bitmaps/option_bkds"), ("color", "#FF2896FF")],
+                         [f'<on event="a" run="{function}"/>', f'<on event="start" run="{function}"/>',
+                          '<on event="left_mouse" run="mouse emit accept event"/>',
+                          f'<child{attributes([("widget", f"{base}/touch_{key}_label")])}/>'])
+        extra += _widget(f"{base}/touch_{key}_label",
+                         [("type", "text"), ("controller", 1), ("width", 300), ("height", 22), ("text", label),
+                          ("font", "ui\\large_ui"), ("color", "#FF2896FF"), ("text_x", 13), ("text_y", 4)], [])
     # (the settings' labels and helps, by label as the settings screens';
     # the other rows' helps are menu_functions.c's own)
     extra += _strings(f"{base}/labels", labels)

@@ -2836,6 +2836,8 @@ int platform_input_scheme(void);
 /* (port/linux/src/touch_overlay.c) */
 int touch_overlay_touched_last(void);
 void touch_overlay_edit_begin(void);
+void touch_overlay_layout_export(void);
+void touch_overlay_layout_import(void);
 #endif
 
 static short spinner_shown(struct widget_instance *list, char const *name)
@@ -2945,7 +2947,11 @@ static void controls_page_update(struct widget_instance *list)
 	if (focused == named(list, "op_device", 0))
 		line = "Choose the keyboard and mouse, a controller, or the touchscreen.";
 	else if (focused == named(list, "op_touch_layout", 0))
-		line = "Move, size or hide the on-screen controls.";
+		line = "Move, size, hide or copy the on-screen controls.";
+	else if (focused == named(list, "op_touch_export", 0))
+		line = "Save the layout to a file, as Android's app does.";
+	else if (focused == named(list, "op_touch_import", 0))
+		line = "Load a layout from a file, Android's app's too.";
 	else if (focused == named(list, "op_group", 0))
 		line = "Choose a group of keys, or the mouse.";
 	else if (focused == named(list, "op_page", 0))
@@ -9055,6 +9061,18 @@ boolean pc_menu_event_function_invoke(
 		else if (!strcmp(name, "port touch layout edit"))
 		{
 			touch_overlay_edit_begin();
+			return TRUE;
+		}
+		/* (EXPORT LAYOUT, IMPORT LAYOUT: Android's layout file, picked with
+		the system's dialog) */
+		else if (!strcmp(name, "port touch layout export"))
+		{
+			touch_overlay_layout_export();
+			return TRUE;
+		}
+		else if (!strcmp(name, "port touch layout import"))
+		{
+			touch_overlay_layout_import();
 			return TRUE;
 		}
 #endif

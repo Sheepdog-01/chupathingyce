@@ -2438,6 +2438,10 @@ void platform_pump_events(void)
 			break;
 #endif
 #ifdef HALO_DESKTOP_TOUCH
+		/* (the gyroscope, for the touch controls' aim) */
+		case SDL_EVENT_SENSOR_UPDATE:
+			touch_overlay_sensor(&event.sensor);
+			break;
 		/* (the touch layout's editor: B or Back leaves it, when let go of,
 		as Escape does; the controller is otherwise read by polling) */
 		case SDL_EVENT_GAMEPAD_BUTTON_UP:

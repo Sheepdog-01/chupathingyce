@@ -19,9 +19,10 @@ Main thread only, as the rest of touch_input.c.
 
 /* the desktop builds' touchscreen code (this, and touch_input.c's and
 sdl_platform.c's parts of it): not Android's, whose app has its own, nor the
-consoles', whose ports decide their touchscreens for themselves; on those
-the functions here do nothing */
-#if !defined(HALO_ANDROID) && !defined(HALO_CONSOLE)
+consoles', whose ports decide their touchscreens for themselves, nor the
+dedicated server's, which has no screen; on those the functions here do
+nothing */
+#if !defined(HALO_ANDROID) && !defined(HALO_CONSOLE) && !defined(HALO_SERVER)
 #define HALO_DESKTOP_TOUCH
 #endif
 
@@ -61,6 +62,16 @@ B), or a mouse button at a point of the window (in its units) or the mouse
 moved with it held, as a finger there */
 void touch_overlay_edit_cancel(void);
 void touch_overlay_edit_mouse(unsigned int type, float window_x, float window_y);
+
+/* a sensor's reading (sdl_platform.c's events): the gyroscope's turn the
+view while input.touch_gyro is on */
+void touch_overlay_sensor(const SDL_SensorEvent *event);
+
+/* the layout to a file, or from one (Controls Setup's EXPORT LAYOUT and
+IMPORT LAYOUT: menu_functions.c), in Android's layout file's form, picked
+with the system's dialog */
+void touch_overlay_layout_export(void);
+void touch_overlay_layout_import(void);
 
 /* whether the touchscreen was the device used last (Controls Setup opens
 on its page then: menu_functions.c) */
