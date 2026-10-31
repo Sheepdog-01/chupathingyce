@@ -933,25 +933,39 @@ void touch_overlay_cancel(void)
 
 input.touch_gyro turns the view as the device turns, while the controls
 show: the gyroscope's rates, turned into the screen's axes by how the
-display is rotated from its natural way, are integrated over each sample's
-time (the mean of two samples) into radians, 0.0022 to the look's pixel as
-the swipe and the mouse have, times input.touch_gyro_sensitivity. The
-sensor is open only while it is used. */
+display is rotated from its natural way, in radians, 0.0022 to the look's
+pixel as the swipe and the mouse have, times input.touch_gyro_sensitivity.
+The sensor is open only while it is used.
+
+Unlike Android's, which integrates each sample (and drops one that comes
+more than a tenth of a second after the last), a rate here holds until the
+next reading, and is integrated up to each one and at every read of the
+look: Windows reports a gyroscope only when its reading changes, at the
+driver's own rate (SDL sets none), so readings come seldom and unevenly, and
+between them the rate is the last one. A reading older than a second is
+taken to be stale, and the rate stops. */
 
 #define LOOK_RADIANS_PER_PIXEL 0.0022f
 /* (rates below this are the sensor's noise at rest, which would drift the
 view) */
 #define GYRO_NOISE 0.01f
-#define GYRO_LONGEST_SAMPLE_NS 100000000ULL
+#define GYRO_STALE_NS 1000000000ULL
+/* (the readings a second, logged while it is used, every few seconds) */
+#define GYRO_RATE_LOG_NS 5000000000ULL
 
 static struct
 {
 	SDL_Sensor *sensor;
 	BOOL tried, subsystem;
-	Uint64 previous_time;
-	int previous_rotation;
-	float previous_x, previous_y;
-} gyro = { .previous_rotation = -1 };
+	int rotation;
+	/* the held rates about the screen's axes (GyroscopeAim.java's screenX
+	and screenY), until when they are integrated, and the last reading */
+	float rate_x, rate_y;
+	Uint64 integrated_until, last_reading;
+	/* readings since the rate was last logged, and when */
+	unsigned int readings;
+	Uint64 counted_since;
+} gyro = { .rotation = -1 };
 
 /* quarter turns counterclockwise the display is from its natural way (0 to
 3, as Android's Surface.ROTATION_*): portrait, landscape (its right side
@@ -974,8 +988,27 @@ static int display_rotation(void)
 
 static void gyro_reset(void)
 {
-	gyro.previous_time = 0;
-	gyro.previous_rotation = -1;
+	gyro.rate_x = gyro.rate_y = 0.0f;
+	gyro.integrated_until = gyro.last_reading = 0;
+	gyro.rotation = -1;
+}
+
+/* the held rates' turn from where they were integrated to now (on the
+clock of SDL_GetTicksNS, which the readings' timestamps are on) */
+static void gyro_advance(Uint64 now)
+{
+	float seconds, sensitivity;
+
+	if (!gyro.integrated_until || now <= gyro.integrated_until)
+		return;
+	if (now - gyro.last_reading > GYRO_STALE_NS)
+		gyro.rate_x = gyro.rate_y = 0.0f;
+	seconds = (float)(now - gyro.integrated_until) * 1e-9f;
+	sensitivity = setting_real("input.touch_gyro_sensitivity", 0.25f, 8.0f, 2.0f);
+	/* (GyroscopeAim.java's delta, and TouchControls.java's look from it) */
+	overlay.look[0] += gyro.rate_y * seconds / LOOK_RADIANS_PER_PIXEL * sensitivity;
+	overlay.look[1] += gyro.rate_x * seconds / LOOK_RADIANS_PER_PIXEL * sensitivity;
+	gyro.integrated_until = now;
 }
 
 /* opens the gyroscope when it is wanted (once a time, and only if there is
@@ -1012,15 +1045,16 @@ static void gyro_update(void)
 		}
 		SDL_free(sensors);
 	}
+	gyro.readings = 0;
+	gyro.counted_since = SDL_GetTicksNS();
 	platform_log(gyro.sensor ? "touch: gyroscope aim on (%s)" : "touch: gyroscope aim, but no gyroscope%s",
 		gyro.sensor ? SDL_GetSensorName(gyro.sensor) : "");
 }
 
 void touch_overlay_sensor(const SDL_SensorEvent *event)
 {
-	float rates[2], right, up, screen_x, screen_y, seconds;
+	float right, up;
 	int rotation;
-	BOOL valid;
 
 	if (!gyro.sensor || event->which != SDL_GetSensorID(gyro.sensor))
 		return;
@@ -1029,55 +1063,52 @@ void touch_overlay_sensor(const SDL_SensorEvent *event)
 		gyro_reset();
 		return;
 	}
+	gyro.readings++;
+	if (event->timestamp - gyro.counted_since >= GYRO_RATE_LOG_NS)
+	{
+		platform_log("touch: gyroscope, %.1f readings a second",
+			(double)gyro.readings * 1e9 / (double)(event->timestamp - gyro.counted_since));
+		gyro.readings = 0;
+		gyro.counted_since = event->timestamp;
+	}
+	/* (the turn so far, at the rates held until now) */
+	gyro_advance(event->timestamp);
 	rotation = display_rotation();
+	if (rotation != gyro.rotation)
+	{
+		gyro_reset();
+		gyro.rotation = rotation;
+	}
 	/* (the rates about the screen's right and up, from the device's x and
 	y: SDL's axes are Android's, right and up with the device held its
 	natural way) */
-	rates[0] = event->data[0];
-	rates[1] = event->data[1];
 	switch (rotation)
 	{
 	default:
-		right = rates[0];
-		up = rates[1];
+		right = event->data[0];
+		up = event->data[1];
 		break;
 	case 1:
-		right = -rates[1];
-		up = rates[0];
+		right = -event->data[1];
+		up = event->data[0];
 		break;
 	case 2:
-		right = -rates[0];
-		up = -rates[1];
+		right = -event->data[0];
+		up = -event->data[1];
 		break;
 	case 3:
-		right = rates[1];
-		up = -rates[0];
+		right = event->data[1];
+		up = -event->data[0];
 		break;
 	}
-	/* (in GyroscopeAim.java's terms; its table, kept for landscape, the 1
-	and 3 a phone has, inverts 0 and 2, which a tablet's natural landscape
-	gives) */
-	screen_x = -right;
-	screen_y = -up;
-	if (fabsf(screen_x) < GYRO_NOISE)
-		screen_x = 0.0f;
-	if (fabsf(screen_y) < GYRO_NOISE)
-		screen_y = 0.0f;
-	seconds = (float)(event->sensor_timestamp - gyro.previous_time) * 1e-9f;
-	valid = gyro.previous_time && rotation == gyro.previous_rotation && event->sensor_timestamp > gyro.previous_time &&
-		event->sensor_timestamp - gyro.previous_time <= GYRO_LONGEST_SAMPLE_NS;
-	if (valid)
-	{
-		float sensitivity = setting_real("input.touch_gyro_sensitivity", 0.25f, 4.0f, 1.0f);
-
-		/* (GyroscopeAim.java's delta, and TouchControls.java's look from it) */
-		overlay.look[0] += (screen_y + gyro.previous_y) * 0.5f * seconds / LOOK_RADIANS_PER_PIXEL * sensitivity;
-		overlay.look[1] += (screen_x + gyro.previous_x) * 0.5f * seconds / LOOK_RADIANS_PER_PIXEL * sensitivity;
-	}
-	gyro.previous_time = event->sensor_timestamp;
-	gyro.previous_rotation = rotation;
-	gyro.previous_x = screen_x;
-	gyro.previous_y = screen_y;
+	/* (GyroscopeAim.java's screenX and screenY; its table, kept for
+	landscape, the 1 and 3 a phone has, inverts 0 and 2, which a tablet's
+	natural landscape gives) */
+	gyro.rate_x = fabsf(right) < GYRO_NOISE ? 0.0f : -right;
+	gyro.rate_y = fabsf(up) < GYRO_NOISE ? 0.0f : -up;
+	gyro.last_reading = event->timestamp;
+	if (!gyro.integrated_until)
+		gyro.integrated_until = event->timestamp;
 }
 
 /* ---------- a layout's file
@@ -1362,6 +1393,9 @@ void touch_overlay_read(int *state)
 
 void touch_overlay_look_read(float *delta)
 {
+	/* (the gyroscope's turn up to this read) */
+	if (gyro.sensor)
+		gyro_advance(SDL_GetTicksNS());
 	delta[0] = overlay.look[0];
 	delta[1] = overlay.look[1];
 	overlay.look[0] = overlay.look[1] = 0.0f;

@@ -571,7 +571,7 @@ TOUCH_ROWS = [
     ("GYRO AIM:", "input.touch_gyro", ON_OFF[::-1],
      "Aim by turning the tablet, if it has a gyroscope.", "desktop"),
     ("GYRO SENSITIVITY:", "input.touch_gyro_sensitivity",
-     [(f"{value:g}", f"{value:g}") for value in (0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4)],
+     [(f"{value:g}", f"{value:g}") for value in (0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8)],
      "How far the view turns as the tablet turns.", "desktop"),
 ]
 # the rows after them that run a function (on a computer): its name, label,

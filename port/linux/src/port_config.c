@@ -530,9 +530,9 @@ static const struct config_setting config_settings[] =
 		"screen." },
 	{ "input.touch_gyro", _config_boolean, "false", "HALO_TOUCH_GYRO", _environment_value, _platform_desktop,
 		"Aim by turning a tablet with a gyroscope, while the touch controls show." },
-	{ "input.touch_gyro_sensitivity", _config_real, "1.0", "HALO_TOUCH_GYRO_SENSITIVITY", _environment_value,
+	{ "input.touch_gyro_sensitivity", _config_real, "2.0", "HALO_TOUCH_GYRO_SENSITIVITY", _environment_value,
 		_platform_desktop,
-		"How far the view turns as the tablet turns, from 0.25 to 4 (1: as far)." },
+		"How far the view turns as the tablet turns, from 0.25 to 8 (1: as far)." },
 	{ "input.touch_layout", _config_string, "\"\"", "HALO_TOUCH_LAYOUT", _environment_value, _platform_desktop,
 		"Where each touch control is, its size and whether it shows (Controls\n"
 		"Setup's EDIT LAYOUT writes it). Empty: the usual layout." },
