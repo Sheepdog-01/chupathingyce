@@ -61,6 +61,13 @@ BOOL halo_ui_point_to_window(short x, short y, float *window_x, float *window_y)
 BOOL platform_input_touch_last(void);
 /* (sdl_platform.c) */
 SDL_Window *platform_sdl_window(void);
+#ifdef _WIN32
+/* (port/windows/src/win32_gyro.c: the gyrometer at its fastest, which SDL's
+reading of it is not) */
+int windows_gyro_open(void);
+void windows_gyro_close(void);
+int windows_gyro_take(unsigned long long *times, float *rates, int maximum);
+#endif
 
 /* touch_input.c's _touch_scene_* bits */
 enum
@@ -956,6 +963,8 @@ view) */
 static struct
 {
 	SDL_Sensor *sensor;
+	/* (or Windows' own, win32_gyro.c) */
+	BOOL windows;
 	BOOL tried, subsystem;
 	int rotation;
 	/* the held rates about the screen's axes (GyroscopeAim.java's screenX
@@ -1024,13 +1033,29 @@ static void gyro_update(void)
 			SDL_CloseSensor(gyro.sensor);
 			gyro.sensor = NULL;
 		}
+#ifdef _WIN32
+		if (gyro.windows)
+		{
+			windows_gyro_close();
+			gyro.windows = FALSE;
+		}
+#endif
 		gyro.tried = FALSE;
 		gyro_reset();
 		return;
 	}
-	if (gyro.sensor || gyro.tried)
+	if (gyro.sensor || gyro.windows || gyro.tried)
 		return;
 	gyro.tried = TRUE;
+	gyro.readings = 0;
+	gyro.counted_since = SDL_GetTicksNS();
+#ifdef _WIN32
+	if ((gyro.windows = windows_gyro_open() != 0))
+	{
+		platform_log("touch: gyroscope aim on (Windows' gyrometer)");
+		return;
+	}
+#endif
 	if (!gyro.subsystem)
 		gyro.subsystem = SDL_InitSubSystem(SDL_INIT_SENSOR);
 	if (gyro.subsystem)
@@ -1045,34 +1070,31 @@ static void gyro_update(void)
 		}
 		SDL_free(sensors);
 	}
-	gyro.readings = 0;
-	gyro.counted_since = SDL_GetTicksNS();
 	platform_log(gyro.sensor ? "touch: gyroscope aim on (%s)" : "touch: gyroscope aim, but no gyroscope%s",
 		gyro.sensor ? SDL_GetSensorName(gyro.sensor) : "");
 }
 
-void touch_overlay_sensor(const SDL_SensorEvent *event)
+/* a reading: rates about the device's x and y, on SDL_GetTicksNS's clock */
+static void gyro_reading(Uint64 timestamp, float x, float y)
 {
 	float right, up;
 	int rotation;
 
-	if (!gyro.sensor || event->which != SDL_GetSensorID(gyro.sensor))
-		return;
 	if (!overlay.shown || overlay.hidden || overlay.editing)
 	{
 		gyro_reset();
 		return;
 	}
 	gyro.readings++;
-	if (event->timestamp - gyro.counted_since >= GYRO_RATE_LOG_NS)
+	if (timestamp - gyro.counted_since >= GYRO_RATE_LOG_NS)
 	{
 		platform_log("touch: gyroscope, %.1f readings a second",
-			(double)gyro.readings * 1e9 / (double)(event->timestamp - gyro.counted_since));
+			(double)gyro.readings * 1e9 / (double)(timestamp - gyro.counted_since));
 		gyro.readings = 0;
-		gyro.counted_since = event->timestamp;
+		gyro.counted_since = timestamp;
 	}
 	/* (the turn so far, at the rates held until now) */
-	gyro_advance(event->timestamp);
+	gyro_advance(timestamp);
 	rotation = display_rotation();
 	if (rotation != gyro.rotation)
 	{
@@ -1085,20 +1107,20 @@ void touch_overlay_sensor(const SDL_SensorEvent *event)
 	switch (rotation)
 	{
 	default:
-		right = event->data[0];
-		up = event->data[1];
+		right = x;
+		up = y;
 		break;
 	case 1:
-		right = -event->data[1];
-		up = event->data[0];
+		right = -y;
+		up = x;
 		break;
 	case 2:
-		right = -event->data[0];
-		up = -event->data[1];
+		right = -x;
+		up = -y;
 		break;
 	case 3:
-		right = event->data[1];
-		up = -event->data[0];
+		right = y;
+		up = -x;
 		break;
 	}
 	/* (GyroscopeAim.java's screenX and screenY; its table, kept for
@@ -1106,9 +1128,34 @@ void touch_overlay_sensor(const SDL_SensorEvent *event)
 	natural landscape gives) */
 	gyro.rate_x = fabsf(right) < GYRO_NOISE ? 0.0f : -right;
 	gyro.rate_y = fabsf(up) < GYRO_NOISE ? 0.0f : -up;
-	gyro.last_reading = event->timestamp;
+	gyro.last_reading = timestamp;
 	if (!gyro.integrated_until)
-		gyro.integrated_until = event->timestamp;
+		gyro.integrated_until = timestamp;
+}
+
+void touch_overlay_sensor(const SDL_SensorEvent *event)
+{
+	if (gyro.sensor && event->which == SDL_GetSensorID(gyro.sensor))
+		gyro_reading(event->timestamp, event->data[0], event->data[1]);
+}
+
+/* Windows' readings since the last take, in their order */
+static void gyro_take(void)
+{
+#ifdef _WIN32
+	unsigned long long times[16];
+	float rates[16][3];
+	int count, index;
+
+	if (!gyro.windows)
+		return;
+	do
+	{
+		count = windows_gyro_take(times, &rates[0][0], 16);
+		for (index = 0; index < count; index++)
+			gyro_reading(times[index], rates[index][0], rates[index][1]);
+	} while (count == 16);
+#endif
 }
 
 /* ---------- a layout's file
@@ -1394,7 +1441,8 @@ void touch_overlay_read(int *state)
 void touch_overlay_look_read(float *delta)
 {
 	/* (the gyroscope's turn up to this read) */
-	if (gyro.sensor)
+	gyro_take();
+	if (gyro.sensor || gyro.windows)
 		gyro_advance(SDL_GetTicksNS());
 	delta[0] = overlay.look[0];
 	delta[1] = overlay.look[1];
