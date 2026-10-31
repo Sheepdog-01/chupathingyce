@@ -2695,12 +2695,16 @@ boolean pc_menu_button_key_cap(
 {
 #ifdef HALO_GAME_BROWSER
 	extern boolean moderation_screen_active(void);
+	/* (port/linux/src/touch_overlay.c) */
+	extern int touch_overlay_touched_last(void);
 	int button = pc_menu_key_cap_button(bitmap_tag_index);
 
 	(void)x0;
 	/* (the Moderation screen over the menu: the menu's key caps hidden with
-	it, not drawn over the screen) */
-	if (button >= 0 && moderation_screen_active())
+	it, not drawn over the screen; and by touch, no button to press: the
+	prompt is its word, which a finger taps, as it does the place the
+	button would be) */
+	if (button >= 0 && (moderation_screen_active() || touch_overlay_touched_last()))
 		return TRUE;
 	if (button >= 0)
 	{
