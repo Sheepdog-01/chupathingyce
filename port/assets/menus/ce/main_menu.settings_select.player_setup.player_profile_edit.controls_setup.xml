@@ -63,11 +63,10 @@
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/view_touch" x="54" y="73"/>
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_controls" x="54" y="97" platform="desktop android"/>
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_scroll" x="54" y="121" platform="desktop android"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_theme" x="54" y="145" platform="desktop"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_size" x="54" y="169" platform="desktop"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_opacity" x="54" y="193" platform="desktop"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_sensitivity" x="54" y="217" platform="desktop"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_layout" x="54" y="241" platform="desktop"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_size" x="54" y="145" platform="desktop"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_opacity" x="54" y="169" platform="desktop"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_sensitivity" x="54" y="193" platform="desktop"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_layout" x="54" y="217" platform="desktop"/>
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/button_bar" y="414"/>
 	</widget>
 	<widget name="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/button_bar" type="column_list" width="640" height="28" flags="pass_unhandled_to_focused_child left_right_tabs_items">
@@ -380,20 +379,11 @@
 	<widget name="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_scroll_spinner" type="spinner" left="3" top="2" width="147" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" strings="FOLLOW|NATURAL" setting="input.touch_scroll" values="follow|natural" font="ui\large_ui" color="#FF2896FF" align="center" text_y="1" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -6 19 0" footer_bounds="7 150 19 156">
 		<on event="created" run="port setting load"/>
 	</widget>
-	<widget name="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_theme" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF" platform="desktop">
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_theme_label"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_theme_spinner" x="320" y="1"/>
-	</widget>
-	<widget name="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_theme_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/labels" string_index="13" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
-	</widget>
-	<widget name="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_theme_spinner" type="spinner" left="3" top="2" width="147" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" strings="XBOX|SIMPLE" setting="input.touch_theme" values="xbox|simple" font="ui\large_ui" color="#FF2896FF" align="center" text_y="1" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -6 19 0" footer_bounds="7 150 19 156">
-		<on event="created" run="port setting load"/>
-	</widget>
 	<widget name="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_size" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF" platform="desktop">
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_size_label"/>
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_size_spinner" x="320" y="1"/>
 	</widget>
-	<widget name="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_size_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/labels" string_index="14" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_size_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/labels" string_index="13" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
 	</widget>
 	<widget name="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_size_spinner" type="spinner" left="3" top="2" width="147" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" strings="50%|60%|70%|80%|90%|100%|110%|125%|150%|175%|200%" setting="input.touch_size" values="0.5|0.6|0.7|0.8|0.9|1|1.1|1.25|1.5|1.75|2" font="ui\large_ui" color="#FF2896FF" align="center" text_y="1" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -6 19 0" footer_bounds="7 150 19 156">
 		<on event="created" run="port setting load"/>
@@ -402,7 +392,7 @@
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_opacity_label"/>
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_opacity_spinner" x="320" y="1"/>
 	</widget>
-	<widget name="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_opacity_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/labels" string_index="15" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_opacity_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/labels" string_index="14" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
 	</widget>
 	<widget name="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_opacity_spinner" type="spinner" left="3" top="2" width="147" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" strings="10%|20%|30%|40%|50%|60%|70%|80%|90%|100%" setting="input.touch_opacity" values="0.1|0.2|0.3|0.4|0.5|0.6|0.7|0.8|0.9|1" font="ui\large_ui" color="#FF2896FF" align="center" text_y="1" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -6 19 0" footer_bounds="7 150 19 156">
 		<on event="created" run="port setting load"/>
@@ -411,9 +401,9 @@
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_sensitivity_label"/>
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_sensitivity_spinner" x="320" y="1"/>
 	</widget>
-	<widget name="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_sensitivity_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/labels" string_index="16" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_sensitivity_label" type="text" controller="1" width="300" height="22" string_list="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/labels" string_index="15" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
 	</widget>
-	<widget name="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_sensitivity_spinner" type="spinner" left="3" top="2" width="147" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" strings="0.25|0.5|0.75|1|1.25|1.5|2|2.5|3|4" setting="input.touch_sensitivity" values="0.25|0.5|0.75|1|1.25|1.5|2|2.5|3|4" font="ui\large_ui" color="#FF2896FF" align="center" text_y="1" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -6 19 0" footer_bounds="7 150 19 156">
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/touch_sensitivity_spinner" type="spinner" left="3" top="2" width="147" height="20" flags="pass_unhandled_to_focused_child left_right_tabs_items" strings="0.5|0.75|1|1.25|1.5|2|2.5|3|4|5|6|8" setting="input.touch_sensitivity" values="0.5|0.75|1|1.25|1.5|2|2.5|3|4|5|6|8" font="ui\large_ui" color="#FF2896FF" align="center" text_y="1" header_bitmap="bitmaps/arrow_sm_left" footer_bitmap="bitmaps/arrow_sm_right" header_bounds="7 -6 19 0" footer_bounds="7 150 19 156">
 		<on event="created" run="port setting load"/>
 	</widget>
 	<widget name="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_layout" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
@@ -438,7 +428,6 @@
 		<string text="IN-GAME HELP:"/>
 		<string text="SHOW CONTROLS:"/>
 		<string text="MENU SCROLL:"/>
-		<string text="BUTTON STYLE:"/>
 		<string text="SIZE:"/>
 		<string text="OPACITY:"/>
 		<string text="LOOK SENSITIVITY:"/>
@@ -458,7 +447,6 @@
 		<string text="Show control hints during play."/>
 		<string text="AUTO shows the controls once the screen is touched."/>
 		<string text="FOLLOW moves the choice the way your finger drags."/>
-		<string text="Draw the buttons as the controller's, or as plain circles."/>
 		<string text="Make every control bigger or smaller."/>
 		<string text="Make the controls more or less see-through."/>
 		<string text="How far a swipe turns the view."/>

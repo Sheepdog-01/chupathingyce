@@ -520,16 +520,14 @@ static const struct config_setting config_settings[] =
 		"Dragging a menu's list on a touchscreen: \"follow\" moves the chosen\n"
 		"row the way your finger goes; \"natural\" moves the list with your\n"
 		"finger, as on a phone (a drag up chooses rows further down)." },
-	{ "input.touch_theme", _config_string, "\"xbox\"", "HALO_TOUCH_THEME", _environment_value, _platform_desktop,
-		"How the touch controls look: \"xbox\" (the controller's buttons) or\n"
-		"\"simple\" (labelled circles)." },
 	{ "input.touch_size", _config_real, "1.0", "HALO_TOUCH_SIZE", _environment_value, _platform_desktop,
 		"The touch controls' size, from 0.5 to 2." },
 	{ "input.touch_opacity", _config_real, "0.6", "HALO_TOUCH_OPACITY", _environment_value, _platform_desktop,
 		"How solid the touch controls are, from 0.1 to 1." },
-	{ "input.touch_sensitivity", _config_real, "1.0", "HALO_TOUCH_SENSITIVITY", _environment_value,
+	{ "input.touch_sensitivity", _config_real, "2.0", "HALO_TOUCH_SENSITIVITY", _environment_value,
 		_platform_desktop,
-		"How far a swipe turns the view, from 0.25 to 4." },
+		"How far a swipe turns the view, from 0.25 to 8, by its length on the\n"
+		"screen." },
 	{ "input.touch_layout", _config_string, "\"\"", "HALO_TOUCH_LAYOUT", _environment_value, _platform_desktop,
 		"Where each touch control is, its size and whether it shows (Controls\n"
 		"Setup's EDIT LAYOUT writes it). Empty: the usual layout." },
@@ -3140,7 +3138,6 @@ static const struct
 	{ "audio.resampling", { "sinc", "linear", NULL }, "\"sinc\"" },
 	{ "input.touch_controls", { "on", "auto", "off", NULL }, DEFAULT_TOUCH_CONTROLS },
 	{ "input.touch_scroll", { "follow", "natural", NULL }, "\"follow\"" },
-	{ "input.touch_theme", { "xbox", "simple", NULL }, "\"xbox\"" },
 	{ "game.console_log", { "important", "all", "none", NULL }, "\"important\"" },
 	{ "game.move_old_map_folders", { "ask", "yes", "no", NULL }, "\"ask\"" },
 	{ "network.protocol", { "auto", "opence", "delta", NULL }, NULL },

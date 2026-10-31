@@ -560,15 +560,13 @@ TOUCH_ROWS = [
      "AUTO shows the controls once the screen is touched.", "desktop android"),
     ("MENU SCROLL:", "input.touch_scroll", [("FOLLOW", "follow"), ("NATURAL", "natural")],
      "FOLLOW moves the choice the way your finger drags.", "desktop android"),
-    ("BUTTON STYLE:", "input.touch_theme", [("XBOX", "xbox"), ("SIMPLE", "simple")],
-     "Draw the buttons as the controller's, or as plain circles.", "desktop"),
     ("SIZE:", "input.touch_size", [(f"{percent}%", f"{percent / 100:g}")
                                    for percent in (50, 60, 70, 80, 90, 100, 110, 125, 150, 175, 200)],
      "Make every control bigger or smaller.", "desktop"),
     ("OPACITY:", "input.touch_opacity", [(f"{percent}%", f"{percent / 100:g}") for percent in range(10, 101, 10)],
      "Make the controls more or less see-through.", "desktop"),
     ("LOOK SENSITIVITY:", "input.touch_sensitivity",
-     [(f"{value:g}", f"{value:g}") for value in (0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4)],
+     [(f"{value:g}", f"{value:g}") for value in (0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6, 8)],
      "How far a swipe turns the view.", "desktop"),
 ]
 CONTROLS_SPEC = {"screen": "controls_settings_screen", "spacing": 24, "help_top": 368, "help_text": True,

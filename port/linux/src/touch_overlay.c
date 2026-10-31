@@ -20,10 +20,12 @@ They show in a game (no menu or cinematic up), with input.touch_controls
 "on", or "auto" (the default) while the touchscreen was the device used
 last: a desktop with a touchscreen does not show them until it is touched,
 and a key, the mouse or a controller hides them again (xinput_sdl.c).
-input.touch_theme draws them with the controller's own button icons
-("xbox") or as plain labelled circles ("simple"); input.touch_size,
-input.touch_opacity and input.touch_sensitivity scale them, and
-input.touch_layout moves, resizes or hides them (empty: Android's layout).
+They are drawn as labelled circles, the stick as a ring with a thumb pad
+that follows the finger. input.touch_size and input.touch_opacity scale
+them, input.touch_sensitivity the swipe (measured by its length on the
+screen, so that a thumb turns the view as far on a tablet as on a phone),
+and input.touch_layout moves, resizes or hides them (empty: the usual
+layout, DESKTOP_LAYOUT's, or Android's without it).
 
 Controls Setup's EDIT LAYOUT (menu_functions.c) opens the layout's editor
 over the menus (touch_overlay_edit_begin): every control drawn where it
@@ -78,8 +80,6 @@ enum
 	NUMBER_OF_KINDS
 };
 
-#define NO_ICON (-1)
-
 static const struct
 {
 	const char *label;
@@ -87,37 +87,28 @@ static const struct
 	int button;
 	/* the SDL axis it pulls (4, 5: the triggers), or -1 */
 	int trigger;
-	/* the controller's icon the "xbox" theme draws it with (ui_overlay.h),
-	or NO_ICON: its label */
-	int icon;
 	/* Android's place on its 960x540 grid, and size in its logical pixels */
 	float x, y, radius;
 } kinds[NUMBER_OF_KINDS] =
 {
-#ifdef HALO_GAME_BROWSER
-#define ICON(name) name
-#else
-#define ICON(name) NO_ICON
-#endif
-	{ "A / Jump", 0, -1, ICON(UI_BUTTON_A), 856, 447, 36 },
-	{ "B / Melee", 1, -1, ICON(UI_BUTTON_B), 913, 377, 32 },
-	{ "X / Reload", 2, -1, ICON(UI_BUTTON_X), 794, 377, 34 },
-	{ "Y / Weapon", 3, -1, ICON(UI_BUTTON_Y), 850, 312, 32 },
-	{ "Fire", -1, 5, ICON(UI_BUTTON_RIGHT_TRIGGER), 915, 239, 39 },
-	{ "Grenade", -1, 4, ICON(UI_BUTTON_LEFT_TRIGGER), 802, 239, 35 },
-	{ "Crouch", 7, -1, NO_ICON, 236, 449, 32 },
-	{ "Zoom", 8, -1, NO_ICON, 691, 449, 32 },
-	{ "Light", 9, -1, ICON(UI_BUTTON_LEFT_SHOULDER), 360, 490, 27 },
-	{ "Gren. type", 10, -1, ICON(UI_BUTTON_RIGHT_SHOULDER), 438, 490, 29 },
-	{ "Pause", 6, -1, ICON(UI_BUTTON_START), 570, 36, 28 },
-	{ "Back", 4, -1, ICON(UI_BUTTON_BACK), 390, 36, 28 },
-	{ "Up", 11, -1, NO_ICON, 100, 237, 25 },
-	{ "Down", 12, -1, NO_ICON, 100, 335, 25 },
-	{ "Left", 13, -1, NO_ICON, 51, 286, 25 },
-	{ "Right", 14, -1, NO_ICON, 149, 286, 25 },
-	{ "Move", -1, -1, NO_ICON, 115, 440, 64 },
-	{ "Fire", -1, 5, ICON(UI_BUTTON_RIGHT_TRIGGER), 255, 239, 39 },
-#undef ICON
+	{ "A / Jump", 0, -1, 856, 447, 36 },
+	{ "B / Melee", 1, -1, 913, 377, 32 },
+	{ "X / Reload", 2, -1, 794, 377, 34 },
+	{ "Y / Weapon", 3, -1, 850, 312, 32 },
+	{ "Fire", -1, 5, 915, 239, 39 },
+	{ "Grenade", -1, 4, 802, 239, 35 },
+	{ "Crouch", 7, -1, 236, 449, 32 },
+	{ "Zoom", 8, -1, 691, 449, 32 },
+	{ "Light", 9, -1, 360, 490, 27 },
+	{ "Gren. type", 10, -1, 438, 490, 29 },
+	{ "Pause", 6, -1, 570, 36, 28 },
+	{ "Back", 4, -1, 390, 36, 28 },
+	{ "Up", 11, -1, 100, 237, 25 },
+	{ "Down", 12, -1, 100, 335, 25 },
+	{ "Left", 13, -1, 51, 286, 25 },
+	{ "Right", 14, -1, 149, 286, 25 },
+	{ "Move", -1, -1, 115, 440, 64 },
+	{ "Fire", -1, 5, 255, 239, 39 },
 };
 
 #define GRID_WIDTH 960.0f
@@ -160,12 +151,14 @@ struct finger
 
 /* the picture as the controls lay out over it: its left edge and width in
 the overlay's units (480 to its height), the scale from Android's logical
-pixels, and the window's units per overlay unit, with the overlay's origin
-in the window */
+pixels, the window's units per overlay unit, with the overlay's origin in
+the window, and a phone's logical pixels per overlay unit by length on the
+screen (the swipe's) */
 struct view
 {
 	float left, width, scale;
 	float window_x0, window_y0, window_scale_x, window_scale_y;
+	float look_scale;
 };
 
 static struct
@@ -203,11 +196,45 @@ static void release_all(void);
 
 /* ---------- the layout */
 
-/* Android's layout into controls; how many */
+/* the desktop's usual layout, as input.touch_layout writes one: laid out
+on a 3:2 tablet (a Surface Pro), whose picture is taller than a phone's;
+empty, Android's */
+static const char DESKTOP_LAYOUT[] = "";
+
+/* a layout as input.touch_layout has it ("kind,x,y,size,shown" for each
+control, between semicolons, x and y on the 960x540 grid) into controls;
+how many, 0 for none or a mistake */
+static int layout_parse(const char *text, struct control *controls)
+{
+	int count = 0;
+
+	while (*text && count < MAXIMUM_CONTROLS)
+	{
+		struct control *control = &controls[count];
+		int kind, shown, used = 0;
+
+		if (sscanf(text, " %d , %f , %f , %f , %d %n", &kind, &control->x, &control->y, &control->size, &shown,
+			&used) != 5 || kind < 0 || kind >= NUMBER_OF_KINDS || control->size < 0.5f || control->size > 2.0f)
+		{
+			return 0;
+		}
+		control->kind = kind;
+		control->shown = shown != 0;
+		count++;
+		text += used;
+		if (*text == ';')
+			text++;
+	}
+	return *text ? 0 : count;
+}
+
+/* the usual layout into controls; how many */
 static int layout_defaults_into(struct control *controls)
 {
-	int kind;
+	int kind, count = layout_parse(DESKTOP_LAYOUT, controls);
 
+	if (count)
+		return count;
 	for (kind = 0; kind < NUMBER_OF_KINDS; kind++)
 	{
 		controls[kind].kind = kind;
@@ -224,41 +251,22 @@ static void layout_defaults(void)
 	overlay.count = layout_defaults_into(overlay.controls);
 }
 
-/* input.touch_layout: "kind,x,y,size,shown" for each control, between
-semicolons, x and y on the 960x540 grid; empty, or a mistake, gives
-Android's layout */
+/* input.touch_layout; empty, or a mistake, gives the usual layout */
 static void layout_read(void)
 {
 	struct control before[MAXIMUM_CONTROLS];
 	int before_count = overlay.count;
 	const char *text;
-	int count = 0;
+	int count;
 
 	if (overlay.layout_read_at == config_changes())
 		return;
 	overlay.layout_read_at = config_changes();
 	memcpy(before, overlay.controls, sizeof(before));
 	text = config_string("input.touch_layout");
-	while (*text && count < MAXIMUM_CONTROLS)
-	{
-		struct control *control = &overlay.controls[count];
-		int kind, shown, used = 0;
-
-		if (sscanf(text, " %d , %f , %f , %f , %d %n", &kind, &control->x, &control->y, &control->size, &shown,
-			&used) != 5 || kind < 0 || kind >= NUMBER_OF_KINDS || control->size < 0.5f || control->size > 2.0f)
-		{
-			if (*text)
-				platform_log("touch: input.touch_layout not understood, using the default layout");
-			count = 0;
-			break;
-		}
-		control->kind = kind;
-		control->shown = shown != 0;
-		count++;
-		text += used;
-		if (*text == ';')
-			text++;
-	}
+	count = layout_parse(text, overlay.controls);
+	if (*text && !count)
+		platform_log("touch: input.touch_layout not understood, using the usual layout");
 	if (count)
 		overlay.count = count;
 	else
@@ -298,6 +306,22 @@ static BOOL view_get(struct view *view)
 	view->window_y0 = y0;
 	view->window_scale_x = (x1 - x0) / 640.0f;
 	view->window_scale_y = (y1 - y0) / 480.0f;
+	/* (Android's swipe is in its logical pixels, 540 to a phone's height,
+	which held sideways is about 360 dp: 1.5 to a dp. A computer's dp is
+	its display scale times 96 pixels to the inch, over 160) */
+	{
+		int pixels_width = 0, pixels_height = 0, window_width = 0, window_height = 0;
+		float display_scale = platform_video_display_scale();
+		float pixels_per_unit;
+
+		platform_video_drawable_size(&pixels_width, &pixels_height);
+		platform_video_window_size(&window_width, &window_height);
+		pixels_per_unit = view->window_scale_y *
+			(window_height > 0 && pixels_height > 0 ? (float)pixels_height / (float)window_height : 1.0f);
+		if (display_scale <= 0.0f)
+			display_scale = 1.0f;
+		view->look_scale = pixels_per_unit / (display_scale * 96.0f / 160.0f) * (GRID_HEIGHT / 360.0f);
+	}
 	return TRUE;
 }
 
@@ -495,10 +519,10 @@ static void finger_move(const struct view *view, SDL_FingerID id, float x, float
 		}
 		if (finger->looks)
 		{
-			float sensitivity = setting_real("input.touch_sensitivity", 0.25f, 4.0f, 1.0f);
+			float sensitivity = setting_real("input.touch_sensitivity", 0.25f, 8.0f, 2.0f);
 
-			overlay.look[0] += (x - finger->last_x) / view->scale * sensitivity;
-			overlay.look[1] += (y - finger->last_y) / view->scale * sensitivity;
+			overlay.look[0] += (x - finger->last_x) * view->look_scale * sensitivity;
+			overlay.look[1] += (y - finger->last_y) * view->look_scale * sensitivity;
 		}
 	}
 	finger->last_x = x;
@@ -609,9 +633,10 @@ one */
 static void edit_save(void)
 {
 	char text[MAXIMUM_CONTROLS * 40];
-	struct control usual[NUMBER_OF_KINDS];
+	struct control usual[MAXIMUM_CONTROLS];
+	int usual_count = layout_defaults_into(usual);
 	size_t used = 0;
-	BOOL changed = overlay.edit_count != layout_defaults_into(usual);
+	BOOL changed = overlay.edit_count != usual_count;
 	int index;
 
 	text[0] = 0;
@@ -624,9 +649,9 @@ static void edit_save(void)
 		if (written < 0 || (size_t)written >= sizeof(text) - used)
 			break;
 		used += (size_t)written;
-		changed |= index >= NUMBER_OF_KINDS || control->kind != usual[index].kind ||
+		changed |= index >= usual_count || control->kind != usual[index].kind ||
 			fabsf(control->x - usual[index].x) > 0.05f || fabsf(control->y - usual[index].y) > 0.05f ||
-			fabsf(control->size - 1.0f) > 0.001f || !control->shown;
+			fabsf(control->size - usual[index].size) > 0.001f || control->shown != usual[index].shown;
 	}
 	if (!config_write("input.touch_layout", changed ? text : ""))
 		platform_log("touch: could not save input.touch_layout");
@@ -873,9 +898,9 @@ void touch_overlay_look_read(float *delta)
 
 #ifdef HALO_GAME_BROWSER
 
-/* a color's alpha scaled by input.touch_opacity (and by fraction: the icons
-and labels are drawn at 1 / 0.6, so that they are solid at the default
-opacity and fade only below it) */
+/* a color's alpha scaled by input.touch_opacity (and by fraction: the
+labels are drawn at 1 / 0.6, so that they are solid at the default opacity
+and fade only below it) */
 static unsigned int faded(unsigned int color, float fraction)
 {
 	/* (the editor shows the controls at the default opacity, so that they
@@ -918,35 +943,24 @@ static void draw_stick(float x, float y, float radius)
 	ring(island_x, island_y, island, island * 0.06f, faded(0xFFFFFF60, 1.0f));
 }
 
-static void draw_button(int kind, float x, float y, float radius, BOOL held, BOOL icons)
+/* a button: a circle and its label (Android's), shrunk until it fits */
+static void draw_button(int kind, float x, float y, float radius, BOOL held)
 {
 	unsigned int fill_top = held ? 0xFFFFFF60 : 0x30343880, fill_bottom = held ? 0xC8CCD060 : 0x0C0E1080;
+	float size = radius * 0.42f;
+	float width = ui_overlay_text_width(UI_FONT_BOLD, size, kinds[kind].label);
 
 	circle_gradient(x, y, radius, faded(fill_top, 1.0f), faded(fill_bottom, 1.0f));
 	ring(x, y, radius, radius * 0.06f, faded(held ? 0xFFFFFFF0 : 0xFFFFFFA0, 1.0f));
-	if (icons && kinds[kind].icon != NO_ICON)
-	{
-		float size = radius * 1.25f;
-		float width = ui_overlay_button_width(kinds[kind].icon, size);
-
-		ui_overlay_button(kinds[kind].icon, size, x - width * 0.5f, y - size * 0.5f, faded(0xFFFFFFFF, 1.0f / 0.6f));
-	}
-	else
-	{
-		/* (a label in two lines' room: shrunk until it fits the circle) */
-		float size = radius * 0.42f;
-		float width = ui_overlay_text_width(UI_FONT_BOLD, size, kinds[kind].label);
-
-		if (width > radius * 1.7f)
-			size *= radius * 1.7f / width;
-		ui_overlay_text(UI_FONT_BOLD, size, x, y - size * 0.5f, UI_ALIGN_CENTER, faded(0xFFFFFFFF, 1.0f / 0.6f),
-			kinds[kind].label);
-	}
+	if (width > radius * 1.7f)
+		size *= radius * 1.7f / width;
+	ui_overlay_text(UI_FONT_BOLD, size, x, y - size * 0.5f, UI_ALIGN_CENTER, faded(0xFFFFFFFF, 1.0f / 0.6f),
+		kinds[kind].label);
 }
 
 /* the editor: the screen dimmed, the panel, and every control, the hidden
 ones faint and the chosen one ringed */
-static void edit_render(const struct view *view, BOOL icons)
+static void edit_render(const struct view *view)
 {
 	static const char *const labels[NUMBER_OF_TOOLS] = { "SMALLER", "BIGGER", "HIDE", "RESET", "CANCEL", "SAVE" };
 	int index;
@@ -986,7 +1000,7 @@ static void edit_render(const struct view *view, BOOL icons)
 		if (control->kind == _kind_stick)
 			draw_stick(x, y, radius);
 		else
-			draw_button(control->kind, x, y, radius, index == overlay.chosen, icons);
+			draw_button(control->kind, x, y, radius, index == overlay.chosen);
 		overlay.fade = 1.0f;
 		if (index == overlay.chosen)
 			ring(x, y, radius + 3.0f, 2.5f, 0xFFD040FF);
@@ -997,18 +1011,16 @@ static void edit_render(const struct view *view, BOOL icons)
 void touch_overlay_render(void)
 {
 	struct view view;
-	BOOL icons;
 	int index;
 
 	if (overlay.editing && view_get(&view))
 	{
-		edit_render(&view, strcmp(config_string("input.touch_theme"), "simple") != 0);
+		edit_render(&view);
 		return;
 	}
 	if (!overlay.shown || !view_get(&view))
 		return;
 	layout_read();
-	icons = strcmp(config_string("input.touch_theme"), "simple") != 0;
 	ui_overlay_layer(0);
 	for (index = 0; index < overlay.count; index++)
 	{
@@ -1025,7 +1037,7 @@ void touch_overlay_render(void)
 		if (control->kind == _kind_stick)
 			draw_stick(x, y, radius);
 		else
-			draw_button(control->kind, x, y, radius, held, icons);
+			draw_button(control->kind, x, y, radius, held);
 	}
 }
 

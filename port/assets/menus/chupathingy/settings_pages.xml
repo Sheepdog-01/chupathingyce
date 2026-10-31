@@ -69,11 +69,10 @@
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/view_touch" x="54" y="73"/>
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_controls" x="54" y="97" platform="desktop android"/>
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_scroll" x="54" y="121" platform="desktop android"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_theme" x="54" y="145" platform="desktop"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_size" x="54" y="169" platform="desktop"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_opacity" x="54" y="193" platform="desktop"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_sensitivity" x="54" y="217" platform="desktop"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_layout" x="54" y="241" platform="desktop"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_size" x="54" y="145" platform="desktop"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_opacity" x="54" y="169" platform="desktop"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_sensitivity" x="54" y="193" platform="desktop"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/controls_setup/op_touch_layout" x="54" y="217" platform="desktop"/>
 	</widget>
 	<widget name="chupathingy/settings/video_settings_screen" width="640" height="480" flags="pass_unhandled_to_focused_child pause_game" bitmap="bitmaps/gradient">
 		<on event="b" run="port settings back"/>
